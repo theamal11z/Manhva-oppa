@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from './supabaseClient';
+import { checkIsUserAdmin } from './admin-helper';
 
 type AuthContextType = {
   session: Session | null;
@@ -23,18 +24,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      console.log('Initial auth session:', { 
+        sessionExists: !!session,
+        userId: session?.user?.id 
+      });
+      
       setSession(session);
       setUser(session?.user || null);
-      await checkIfAdmin(session?.user?.id);
+      
+      if (session?.user?.id) {
+        // Use the direct database function to check admin status
+        const isUserAdmin = await checkIsUserAdmin();
+        console.log('🔐 Initial admin check using database function:', isUserAdmin);
+        setIsAdmin(isUserAdmin);
+      } else {
+        setIsAdmin(false);
+      }
+      
       setLoading(false);
     });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
+        console.log('Auth state changed:', { 
+          event: _event,
+          sessionExists: !!session,
+          userId: session?.user?.id 
+        });
+        
         setSession(session);
         setUser(session?.user || null);
-        await checkIfAdmin(session?.user?.id);
+        
+        if (session?.user?.id) {
+          // Use the direct database function to check admin status on auth change
+          const isUserAdmin = await checkIsUserAdmin();
+          console.log('🔐 Updated admin check using database function:', isUserAdmin);
+          setIsAdmin(isUserAdmin);
+        } else {
+          setIsAdmin(false);
+        }
+        
         setLoading(false);
       }
     );
@@ -43,32 +73,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       subscription.unsubscribe();
     };
   }, []);
-
-  const checkIfAdmin = async (userId?: string) => {
-    if (!userId) {
-      setIsAdmin(false);
-      return;
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from('admins')
-        .select('*')
-        .eq('user_id', userId)
-        .single();
-
-      if (error) {
-        console.error('Error checking admin status:', error);
-        setIsAdmin(false);
-        return;
-      }
-
-      setIsAdmin(!!data);
-    } catch (error) {
-      console.error('Error checking admin status:', error);
-      setIsAdmin(false);
-    }
-  };
 
   const signUp = async (email: string, password: string) => {
     try {

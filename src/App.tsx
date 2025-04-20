@@ -106,6 +106,61 @@ function App() {
     return <>{children}</>;
   };
 
+  // Admin only route protection
+  const AdminRoute = ({ children }: { children: React.ReactNode }) => {
+    if (loading) {
+      return (
+        <div className="pt-20 flex justify-center items-center min-h-screen">
+          <div className="manga-panel p-8 bg-black/50 transform rotate-2">
+            <p className="manga-title text-2xl">Loading...</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (!user) {
+      return (
+        <div className="pt-20 flex justify-center items-center min-h-screen">
+          <div className="manga-panel p-8 bg-black/50 transform -rotate-2">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-6 h-6 text-red-500" />
+              <p className="manga-title text-2xl text-red-500">Login Required</p>
+            </div>
+            <p className="mt-2 mb-4">You need to be logged in to access this page.</p>
+            <Link 
+              to="/"
+              className="mt-4 inline-block manga-border px-4 py-2 hover:text-red-500 transition-all transform hover:scale-105"
+            >
+              Go to Home
+            </Link>
+          </div>
+        </div>
+      );
+    }
+
+    if (!isAdmin) {
+      return (
+        <div className="pt-20 flex justify-center items-center min-h-screen">
+          <div className="manga-panel p-8 bg-black/50 transform -rotate-2">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-6 h-6 text-red-500" />
+              <p className="manga-title text-2xl text-red-500">Access Denied</p>
+            </div>
+            <p className="mt-2 mb-4">You don't have permission to access the admin panel.</p>
+            <Link 
+              to="/"
+              className="mt-4 inline-block manga-border px-4 py-2 hover:text-red-500 transition-all transform hover:scale-105"
+            >
+              Go to Home
+            </Link>
+          </div>
+        </div>
+      );
+    }
+
+    return <>{children}</>;
+  };
+
   return (
     <div className="min-h-screen bg-gray-900 text-white relative">
       <div className="fixed inset-0 screen-tone pointer-events-none" />
@@ -369,9 +424,9 @@ function App() {
           <Route 
             path="/admin" 
             element={
-              <ProtectedRoute>
+              <AdminRoute>
                 <Admin />
-              </ProtectedRoute>
+              </AdminRoute>
             } 
           />
           

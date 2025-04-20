@@ -12,7 +12,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
-import { getMangaList, addMangaEntry, updateMangaEntry, deleteMangaEntry } from '../lib/supabaseClient';
+import { getMangaList } from '../lib/supabaseClient';
 
 const Admin: React.FC = () => {
   const { user, isAdmin, loading: authLoading } = useAuth();
@@ -21,24 +21,17 @@ const Admin: React.FC = () => {
   const [mangaList, setMangaList] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'manga' | 'users' | 'settings'>('manga');
-  
-  useEffect(() => {
-    // Redirect if not an admin
-    if (!authLoading && (!user || !isAdmin)) {
-      navigate('/');
-    }
-  }, [user, isAdmin, authLoading, navigate]);
-  
+
   useEffect(() => {
     if (!isAdmin) return;
-    
+
     const fetchMangaList = async () => {
       try {
         setLoading(true);
         const response = await getMangaList(50, 0);
-        
+
         if (response.error) throw new Error(response.error.message);
-        
+
         setMangaList(response.data || []);
       } catch (err: any) {
         console.error('Error fetching manga list:', err);
@@ -47,10 +40,10 @@ const Admin: React.FC = () => {
         setLoading(false);
       }
     };
-    
+
     fetchMangaList();
   }, [isAdmin]);
-  
+
   if (authLoading) {
     return (
       <div className="pt-20 flex justify-center items-center min-h-screen">
@@ -60,7 +53,7 @@ const Admin: React.FC = () => {
       </div>
     );
   }
-  
+
   if (!user || !isAdmin) {
     return (
       <div className="pt-20 flex justify-center items-center min-h-screen">
@@ -69,7 +62,7 @@ const Admin: React.FC = () => {
             <AlertCircle className="w-6 h-6 text-red-500" />
             <p className="manga-title text-2xl text-red-500">Admin access required</p>
           </div>
-          <button 
+          <button
             onClick={() => navigate('/')}
             className="mt-4 inline-block manga-border px-4 py-2 hover:text-red-500 transition-all transform hover:scale-105"
           >
@@ -80,7 +73,7 @@ const Admin: React.FC = () => {
       </div>
     );
   }
-  
+
   return (
     <div className="pt-20 pb-16">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -89,7 +82,7 @@ const Admin: React.FC = () => {
             <h1 className="manga-title text-4xl transform -rotate-2">Admin Dashboard</h1>
             <p className="text-gray-400 mt-1">Manage content and users</p>
           </div>
-          <button 
+          <button
             onClick={() => navigate('/')}
             className="manga-border px-4 py-2 hover:text-red-500 transition-all transform hover:scale-105"
           >
@@ -97,44 +90,44 @@ const Admin: React.FC = () => {
             Back to Site
           </button>
         </div>
-        
+
         {/* Navigation Tabs */}
         <div className="flex gap-8 mb-8 border-b border-white/10">
           <button
             onClick={() => setActiveView('manga')}
             className={`flex items-center gap-2 pb-4 transition-colors manga-title transform hover:rotate-2 ${
-              activeView === 'manga' 
-                ? 'text-red-500 border-b-2 border-red-500' 
+              activeView === 'manga'
+                ? 'text-red-500 border-b-2 border-red-500'
                 : 'text-gray-400 hover:text-white'
             }`}
           >
             <BookOpen className="w-5 h-5" />
             Manga Library
           </button>
-          
+
           <button
             onClick={() => setActiveView('users')}
             className={`flex items-center gap-2 pb-4 transition-colors manga-title transform hover:rotate-2 ${
-              activeView === 'users' 
-                ? 'text-red-500 border-b-2 border-red-500' 
+              activeView === 'users'
+                ? 'text-red-500 border-b-2 border-red-500'
                 : 'text-gray-400 hover:text-white'
             }`}
           >
             Users
           </button>
-          
+
           <button
             onClick={() => setActiveView('settings')}
             className={`flex items-center gap-2 pb-4 transition-colors manga-title transform hover:rotate-2 ${
-              activeView === 'settings' 
-                ? 'text-red-500 border-b-2 border-red-500' 
+              activeView === 'settings'
+                ? 'text-red-500 border-b-2 border-red-500'
                 : 'text-gray-400 hover:text-white'
             }`}
           >
             Settings
           </button>
         </div>
-        
+
         {/* Manga Management */}
         {activeView === 'manga' && (
           <div>
@@ -150,7 +143,7 @@ const Admin: React.FC = () => {
                 </button>
               </div>
             </div>
-            
+
             {/* Search & Filter */}
             <div className="flex gap-4 mb-6">
               <div className="relative flex-1">
@@ -166,7 +159,7 @@ const Admin: React.FC = () => {
                 Filters
               </button>
             </div>
-            
+
             {/* Manga Table */}
             {loading ? (
               <div className="manga-panel p-6 bg-black/30 text-center">
@@ -228,7 +221,7 @@ const Admin: React.FC = () => {
             )}
           </div>
         )}
-        
+
         {/* Placeholder for other tabs */}
         {activeView === 'users' && (
           <div className="manga-panel p-6 bg-black/30 text-center">
@@ -236,7 +229,7 @@ const Admin: React.FC = () => {
             <p>This feature is coming soon.</p>
           </div>
         )}
-        
+
         {activeView === 'settings' && (
           <div className="manga-panel p-6 bg-black/30 text-center">
             <p className="manga-title text-xl mb-4">Admin Settings</p>
