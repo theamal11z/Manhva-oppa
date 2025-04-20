@@ -27,7 +27,7 @@ import Signup from './pages/Signup';
 import ResetPassword from './pages/ResetPassword';
 
 function App() {
-  const { user, loading, signOut } = useAuth();
+  const { user, loading, signOut, isAdmin } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -147,6 +147,14 @@ function App() {
                     <User className="w-5 h-5" />
                     Profile
                   </Link>
+                  {isAdmin && (
+                    <Link 
+                      to="/admin" 
+                      className="manga-border px-4 py-2 hover:text-red-500 transition-all transform hover:scale-105 hover:-rotate-2 flex items-center gap-2"
+                    >
+                      Admin
+                    </Link>
+                  )}
                 </>
               ) : (
                 <>
@@ -211,6 +219,14 @@ function App() {
                 >
                   Profile
                 </Link>
+                {isAdmin && (
+                  <Link 
+                    to="/admin" 
+                    className="block manga-panel py-2 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2"
+                  >
+                    Admin Panel
+                  </Link>
+                )}
               </>
             ) : (
               <>
