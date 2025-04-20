@@ -122,6 +122,75 @@ export const deleteMangaEntry = async (id: string) => {
     .eq('id', id);
 };
 
+// User management for admins
+export const getUsers = async (limit = 20, offset = 0) => {
+  return supabase
+    .from('user_profiles')
+    .select('*')
+    .range(offset, offset + limit - 1)
+    .order('created_at', { ascending: false });
+};
+
+export const getUserById = async (userId: string) => {
+  return supabase
+    .from('user_profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
+};
+
+export const addAdmin = async (userId: string) => {
+  return supabase
+    .from('admins')
+    .insert({ user_id: userId })
+    .select();
+};
+
+export const removeAdmin = async (userId: string) => {
+  return supabase
+    .from('admins')
+    .delete()
+    .eq('user_id', userId);
+};
+
+export const getAdminList = async () => {
+  // Use a direct query with RPC to avoid the RLS policies causing infinite recursion
+  const { data, error } = await supabase.rpc('get_admin_list');
+  
+  if (error) {
+    console.error("Error fetching admin list:", error);
+    return { data: [], error };
+  }
+  
+  return { data, error };
+};
+
+// Stats for admin dashboard
+export const getDashboardStats = async () => {
+  // Get total manga count
+  const mangaCount = await supabase
+    .from('manga_entries')
+    .select('id', { count: 'exact', head: true });
+    
+  // Get total user count
+  const userCount = await supabase
+    .from('user_profiles')
+    .select('id', { count: 'exact', head: true });
+    
+  // Get recently added manga
+  const recentManga = await supabase
+    .from('manga_entries')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(5);
+    
+  return {
+    mangaCount: mangaCount.count || 0,
+    userCount: userCount.count || 0,
+    recentManga: recentManga.data || []
+  };
+};
+
 // Upload a manga cover image to Supabase storage
 export const uploadCoverImage = async (file: File, path: string) => {
   return supabase.storage.from('manga_covers').upload(path, file);
