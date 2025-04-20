@@ -395,7 +395,7 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/discover" element={<Discover />} />
           <Route path="/manga/:id" element={<MangaDetail />} />
-          <Route path="/reader/:mangaId/:chapterId" element={<Reader />} />
+          <Route path="/reader/:mangaId/chapter/:chapterId" element={<Reader />} />
           
           {/* Auth Routes */}
           <Route path="/login" element={<Login />} />
