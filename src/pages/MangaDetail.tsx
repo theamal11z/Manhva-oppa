@@ -13,15 +13,15 @@ import {
   User,
   Clock,
   AlertCircle,
-
+  BookOpen
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import { 
   getMangaById, 
-  addToReadingList, 
   addToFavorites, 
   getChaptersByMangaId,
-  supabase 
+  updateReadingStatus,
+  supabase
 } from '../lib/supabaseClient';
 
 type Chapter = {
@@ -36,7 +36,6 @@ type Chapter = {
   read?: boolean;
 };
 
-import { updateReadingStatus } from '../lib/supabaseClient';
 
 const MangaDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -129,44 +128,69 @@ const MangaDetail: React.FC = () => {
     fetchManga();
   }, [id, user]);
   
-  // Fetch chapters separately
+  // Fetch chapters separately and mark which ones have been read
   useEffect(() => {
     const fetchChapters = async () => {
       if (!id) return;
       
       try {
         setChaptersLoading(true);
-        const { data, error } = await getChaptersByMangaId(id, 100);
+        const response = await getChaptersByMangaId(id);
         
-        if (error) throw new Error(error.message);
+        if (response.error) throw new Error(response.error.message);
         
-        // Sort chapters by number descending (newest first)
-        const sortedChapters = [...(data || [])].sort((a, b) => 
-          b.chapter_number - a.chapter_number
-        );
+        const sortedChapters = (response.data || [])
+          .sort((a: Chapter, b: Chapter) => {
+            // Sort by chapter number in descending order (newest first)
+            return b.chapter_number - a.chapter_number;
+          });
         
-        // If user is logged in, check read status
+        // Mark chapters that have been read if user is logged in
         if (user) {
-          const { data: readHistory } = await supabase
+          // Fetch reading history for this manga
+          const { data: readingHistory } = await supabase
             .from('reading_history')
             .select('chapter_id')
             .eq('user_id', user.id)
             .eq('manga_id', id);
-            
-          const readChapterIds = new Set(
-            readHistory?.map(item => item.chapter_id) || []
-          );
           
-          sortedChapters.forEach(chapter => {
-            // Add read property to chapter object
-            (chapter as any).read = readChapterIds.has(chapter.id);
+          // Get user reading status to find current chapter
+          const { data: readingStatus } = await supabase
+            .from('user_reading_lists')
+            .select('status, current_chapter')
+            .eq('user_id', user.id)
+            .eq('manga_id', id)
+            .single();
+          
+          // Create a set of read chapter IDs for faster lookup
+          const readChapterIds = new Set();
+          
+          if (readingHistory) {
+            readingHistory.forEach((record: any) => {
+              readChapterIds.add(record.chapter_id);
+            });
+          }
+          
+          // Mark chapters as read based on reading history
+          const markedChapters = sortedChapters.map((chapter: Chapter) => {
+            // A chapter is considered read if it's in the reading history
+            // OR if it's a lower chapter number than the current chapter (when status is 'reading' or 'completed')
+            const isRead = readChapterIds.has(String(chapter.chapter_number)) || 
+              (readingStatus?.current_chapter !== undefined && 
+              chapter.chapter_number <= readingStatus.current_chapter && 
+              ['reading', 'completed'].includes(readingStatus.status || ''));
+              
+            return { ...chapter, read: isRead };
           });
+          
+          setChapters(markedChapters);
+        } else {
+          // No user logged in, chapters are not marked as read
+          setChapters(sortedChapters);
         }
-        
-        setChapters(sortedChapters);
       } catch (err: any) {
         console.error('Error fetching chapters:', err);
-        // Don't set main error - just log it
+        // Don't set global error, just show empty state
       } finally {
         setChaptersLoading(false);
       }
@@ -176,16 +200,37 @@ const MangaDetail: React.FC = () => {
   }, [id, user]);
   
   const handleAddToList = async (status: 'reading' | 'completed' | 'on_hold' | 'dropped' | 'plan_to_read') => {
-    if (!user || !manga) return;
+    if (!user || !id) return;
     
+    setStatusUpdating(true);
     try {
-      await addToReadingList(user.id, manga.id, status);
-      alert(`Added to your ${status.replace('_', ' ')} list!`);
-    } catch (err) {
-      console.error('Error adding to reading list:', err);
+      // Find the appropriate chapter to set as current chapter based on status
+      let currentChapter = 1;
+      
+      // If we have chapters available
+      if (chapters.length > 0) {
+        // For completed status, set to max chapter
+        if (status === 'completed') {
+          // Find the maximum chapter number
+          currentChapter = Math.max(...chapters.map(ch => ch.chapter_number));
+        }
+        // For reading status, start with chapter 1
+        // For other statuses, currentChapter remains 1
+      }
+      
+      await updateReadingStatus(user.id, id, status, currentChapter);
+      setInReadingList(true);
+      setUserStatus(status);
+      setUserChapter(currentChapter);
+      setStatusSuccess(`Added to your ${status.replace('_', ' ')} list`);
+    } catch (err: any) {
+      setError(err.message || 'Failed to add to list');
+    } finally {
+      setStatusUpdating(false);
+      setTimeout(() => setStatusSuccess(null), 3000);
     }
   };
-  
+
   const handleAddToFavorites = async () => {
     if (!user || !manga) return;
     
@@ -469,6 +514,48 @@ const MangaDetail: React.FC = () => {
             </div>
             
             {/* Tab content */}
+            {/* Reading Progress Bar - show only if user has started reading */}
+            {user && userChapter && (
+              <div className="mb-6 manga-panel bg-black/20 p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="w-5 h-5 text-red-500" />
+                    <h3 className="font-semibold">Your Reading Progress</h3>
+                  </div>
+                  <div className="text-sm text-gray-300">
+                    {userStatus === 'reading' ? 'Currently Reading' :
+                     userStatus === 'completed' ? 'Completed' :
+                     userStatus === 'on_hold' ? 'On Hold' :
+                     userStatus === 'dropped' ? 'Dropped' :
+                     userStatus === 'plan_to_read' ? 'Plan to Read' : ''}  
+                  </div>
+                </div>
+                
+                <div className="flex justify-between text-xs text-gray-400 mb-1">
+                  <span>Chapter {userChapter} / {chapters.length > 0 ? chapters[chapters.length - 1].chapter_number : '?'}</span>
+                  <span>{chapters.length > 0 ? Math.round((userChapter / chapters[chapters.length - 1].chapter_number) * 100) : 0}%</span>
+                </div>
+                
+                <div className="w-full bg-gray-700 h-2 rounded-full overflow-hidden">
+                  <div 
+                    className="bg-red-500 h-full transition-all duration-500" 
+                    style={{ width: `${chapters.length > 0 ? (userChapter / chapters[chapters.length - 1].chapter_number) * 100 : 0}%` }}
+                  ></div>
+                </div>
+                
+                {userStatus === 'reading' && (
+                  <div className="mt-3 flex justify-end">
+                    <Link 
+                      to={`/reader/${id}/chapter/${userChapter}`} 
+                      className="manga-border px-3 py-1 bg-red-500/30 hover:bg-red-500/50 text-sm flex items-center gap-1 transition-colors"
+                    >
+                      Continue Reading Chapter {userChapter}
+                    </Link>
+                  </div>
+                )}
+              </div>
+            )}
+            
             {activeTab === 'info' ? (
               <div className="speech-bubble transform -rotate-1 p-6">
                 <p className="text-lg leading-relaxed">{mangaData.description}</p>
@@ -494,7 +581,7 @@ const MangaDetail: React.FC = () => {
                       <Link 
                         key={chapter.id}
                         to={`/reader/${mangaData.id}/chapter/${chapter.chapter_number}`}
-                        className={`flex items-center justify-between p-3 manga-border ${(chapter as any).read ? 'opacity-70' : ''} hover:bg-white/5 transition-colors transform hover:scale-[1.01] ${index % 2 ? 'hover:rotate-[0.5deg]' : 'hover:-rotate-[0.5deg]'}`}
+                        className={`flex items-center justify-between p-3 manga-border ${chapter.read ? 'opacity-70' : ''} hover:bg-white/5 transition-colors transform hover:scale-[1.01] ${index % 2 ? 'hover:rotate-[0.5deg]' : 'hover:-rotate-[0.5deg]'}`}
                       >
                         <div className="flex items-center gap-3">
                           <div className="aspect-square w-10 h-10 flex items-center justify-center manga-panel bg-gray-800">
@@ -507,7 +594,7 @@ const MangaDetail: React.FC = () => {
                             </p>
                           </div>
                         </div>
-                        {(chapter as any).read && (
+                        {chapter.read && (
                           <span className="text-sm text-gray-400 manga-border px-2 py-1">Read</span>
                         )}
                       </Link>

@@ -17,6 +17,7 @@ import Dashboard from '../components/admin/Dashboard';
 import MangaManager from '../components/admin/MangaManager';
 import UserManager from '../components/admin/UserManager';
 import ChapterManager from '../components/admin/ChapterManager';
+import AdminSettings from '../components/admin/AdminSettings';
 
 const Admin: React.FC = () => {
   const { user, isAdmin, loading: authLoading, signOut } = useAuth();
@@ -308,45 +309,13 @@ const Admin: React.FC = () => {
             {activeView === 'users' && <UserManager />}
             
             {activeView === 'settings' && (
-              <div className="p-4">
-                <div className="manga-panel p-6 bg-black/30">
-                  <h2 className="text-2xl font-bold manga-title mb-6">Admin Settings</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="p-4 border border-white/10 bg-black/20">
-                      <h3 className="text-lg font-medium mb-3">Site Configuration</h3>
-                      <p className="text-gray-400 mb-4">Manage site-wide settings and configurations.</p>
-                      <button className="manga-border px-4 py-2 hover:text-red-500 transition-all">
-                        Coming Soon
-                      </button>
-                    </div>
-                    
-                    <div className="p-4 border border-white/10 bg-black/20">
-                      <h3 className="text-lg font-medium mb-3">Security</h3>
-                      <p className="text-gray-400 mb-4">Manage security settings and access controls.</p>
-                      <button className="manga-border px-4 py-2 hover:text-red-500 transition-all">
-                        Coming Soon
-                      </button>
-                    </div>
-                    
-                    <div className="p-4 border border-white/10 bg-black/20">
-                      <h3 className="text-lg font-medium mb-3">Backup & Restore</h3>
-                      <p className="text-gray-400 mb-4">Manage database backups and restoration.</p>
-                      <button className="manga-border px-4 py-2 hover:text-red-500 transition-all">
-                        Coming Soon
-                      </button>
-                    </div>
-                    
-                    <div className="p-4 border border-white/10 bg-black/20">
-                      <h3 className="text-lg font-medium mb-3">API Keys</h3>
-                      <p className="text-gray-400 mb-4">Manage API keys and external service connections.</p>
-                      <button className="manga-border px-4 py-2 hover:text-red-500 transition-all">
-                        Coming Soon
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+  <div className="p-4">
+    <div className="manga-panel p-6 bg-black/90">
+      <h2 className="text-2xl font-bold manga-title mb-6">Admin Settings</h2>
+      <AdminSettings />
+    </div>
+  </div>
+)}
           </div>
         </div>
       </div>

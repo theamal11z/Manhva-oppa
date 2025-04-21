@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   BookOpen,
@@ -14,17 +14,35 @@ import {
 } from 'lucide-react';
 import { getMangaList, getGenres } from '../lib/supabaseClient';
 
-type FilterOptions = {
+// Define proper interfaces for better type safety
+interface MangaItem {
+  id: string;
+  title: string;
+  description: string;
+  coverImage: string;
+  rating: number;
+  genres: string[];
+  type: string;
+  status: string;
+  isNew: boolean;
+  isTrending: boolean;
+  created_at?: string;
+  popularity?: number;
+}
+
+interface FilterOptions {
   genres: string[];
   types: string[];
   status: string[];
   minRating: number;
-};
+}
 
 const Discover: React.FC = () => {
+  // State management
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
-  const [mangaList, setMangaList] = useState<any[]>([]);
+  const [mangaList, setMangaList] = useState<MangaItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<'all' | 'trending' | 'new'>('all');
@@ -35,18 +53,29 @@ const Discover: React.FC = () => {
     minRating: 0,
   });
   
+  // Simplified state without pagination for better performance
+  
   // Available filter options
   const [availableGenres, setAvailableGenres] = useState<string[]>([]);
   const availableTypes = ['manga', 'manhwa', 'manhua', 'webtoon'];
   const availableStatus = ['ongoing', 'completed', 'hiatus', 'cancelled'];
   
+  // Debounce search term to prevent excessive filtering
   useEffect(() => {
-    // Fetch genres from the database
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Fetch genres from the database
+  useEffect(() => {
     const fetchGenres = async () => {
       try {
         const { data, error } = await getGenres();
         if (error) throw error;
-        setAvailableGenres(data.map((g: any) => g.name));
+        setAvailableGenres(data.map((g: {name: string}) => g.name));
       } catch (err) {
         setAvailableGenres([
           'Action', 'Adventure', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Mystery',
@@ -55,95 +84,101 @@ const Discover: React.FC = () => {
       }
     };
     fetchGenres();
-
-    const fetchManga = async () => {
-      try {
-        setLoading(true);
-        let orderBy: 'created_at' | 'popularity' = 'created_at';
-        let orderDirection: 'asc' | 'desc' = 'desc';
-        if (activeCategory === 'trending') {
-          orderBy = 'popularity';
-          orderDirection = 'desc';
-        } else if (activeCategory === 'new') {
-          orderBy = 'created_at';
-          orderDirection = 'desc';
-        }
-        // In a real app, we would include filters in the API call
-        const response = await getMangaList(30, 0, orderBy, orderDirection);
-        
-        if (response.error) throw new Error(response.error.message);
-        
-        // Format the data
-        const formattedData = response.data?.map((item: any) => ({
-          id: item.id,
-          title: item.title,
-          description: item.description,
-          coverImage: item.cover_image || `https://picsum.photos/seed/${item.id}/300/400`,
-          rating: item.rating || 0,
-          genres: (item.genres || []).map((g: any) => g.genres?.name).filter(Boolean),
-          type: item.type,
-          status: item.status,
-          isNew: new Date(item.created_at).getTime() > Date.now() - 7 * 24 * 60 * 60 * 1000,
-          isTrending: item.popularity && item.popularity > 100, // Example: trending if popularity high
-        }));
-        
-        if (formattedData && formattedData.length > 0) {
-          setMangaList(formattedData);
-        } else {
-          setMangaList([]);
-        }
-      } catch (err: any) {
-        console.error('Error fetching manga:', err);
-        setError(err.message || 'Failed to fetch manga');
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchManga();
   }, []);
+
+  // Simplified fetch manga function to avoid performance issues
+  const fetchManga = useCallback(async () => {
+    try {
+      setLoading(true);
+      let orderBy: 'created_at' | 'popularity' = 'created_at';
+      let orderDirection: 'asc' | 'desc' = 'desc';
+      
+      if (activeCategory === 'trending') {
+        orderBy = 'popularity';
+        orderDirection = 'desc';
+      } else if (activeCategory === 'new') {
+        orderBy = 'created_at';
+        orderDirection = 'desc';
+      }
+      
+      // Use a fixed value for now to prevent performance issues
+      // We'll load 30 items at once without pagination
+      const response = await getMangaList(30, 0, orderBy, orderDirection);
+      
+      if (response.error) throw new Error(response.error.message);
+      
+      // Format the data
+      const formattedData = response.data?.map((item: any) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        coverImage: item.cover_image || `https://picsum.photos/seed/${item.id}/300/400`,
+        rating: item.rating || 0,
+        genres: (item.genres || []).map((g: any) => g.genres?.name).filter(Boolean),
+        type: item.type,
+        status: item.status,
+        isNew: new Date(item.created_at).getTime() > Date.now() - 7 * 24 * 60 * 60 * 1000,
+        isTrending: item.popularity && item.popularity > 100, // Example: trending if popularity high
+      }));
+      
+      if (formattedData && formattedData.length > 0) {
+        setMangaList(formattedData);
+      } else {
+        setMangaList([]);
+      }
+      // No pagination needed for better performance
+    } catch (err: any) {
+      console.error('Error fetching manga:', err);
+      setError(err.message || 'Failed to fetch manga');
+    } finally {
+      setLoading(false);
+    }
+  }, [activeCategory]);
   
-  // Apply filters and search
-  const filteredManga = mangaList.filter(manga => {
-    // Apply search filter
-    if (searchTerm && !manga.title.toLowerCase().includes(searchTerm.toLowerCase())) {
-      return false;
-    }
-    
-    // Apply category filter
-    if (activeCategory === 'trending' && !manga.isTrending) {
-      return false;
-    }
-    
-    if (activeCategory === 'new' && !manga.isNew) {
-      return false;
-    }
-    
-    // Apply genre filters
-    if (filterOptions.genres.length > 0 && 
-        !filterOptions.genres.some(genre => manga.genres.includes(genre))) {
-      return false;
-    }
-    
-    // Apply type filters
-    if (filterOptions.types.length > 0 && 
-        !filterOptions.types.includes(manga.type)) {
-      return false;
-    }
-    
-    // Apply status filters
-    if (filterOptions.status.length > 0 && 
-        !filterOptions.status.includes(manga.status)) {
-      return false;
-    }
-    
-    // Apply rating filter
-    if (manga.rating < filterOptions.minRating) {
-      return false;
-    }
-    
-    return true;
-  });
+  // Apply filters and search with memoization for performance
+  const filteredManga = useMemo(() => {
+    return mangaList.filter(manga => {
+      // Apply search filter
+      if (debouncedSearchTerm && !manga.title.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) {
+        return false;
+      }
+      
+      // Apply category filter - these are now handled at the DB level
+      // but we keep the client filtering as a fallback
+      if (activeCategory === 'trending' && !manga.isTrending) {
+        return false;
+      }
+      
+      if (activeCategory === 'new' && !manga.isNew) {
+        return false;
+      }
+      
+      // Apply genre filters
+      if (filterOptions.genres.length > 0 && 
+          !filterOptions.genres.some(genre => manga.genres.includes(genre))) {
+        return false;
+      }
+      
+      // Apply type filters
+      if (filterOptions.types.length > 0 && 
+          !filterOptions.types.includes(manga.type)) {
+        return false;
+      }
+      
+      // Apply status filters
+      if (filterOptions.status.length > 0 && 
+          !filterOptions.status.includes(manga.status)) {
+        return false;
+      }
+      
+      // Apply rating filter
+      if (manga.rating < filterOptions.minRating) {
+        return false;
+      }
+      
+      return true;
+    });
+  }, [mangaList, debouncedSearchTerm, activeCategory, filterOptions]);
   
   const toggleGenreFilter = (genre: string) => {
     setFilterOptions(prev => {
@@ -183,6 +218,18 @@ const Discover: React.FC = () => {
       minRating: 0,
     });
     setSearchTerm('');
+    fetchManga(); // Reload with cleared filters
+  };
+  
+  // Add effect to load data on category changes
+  useEffect(() => {
+    fetchManga();
+  }, [activeCategory, fetchManga]);
+  
+  // Simple placeholder function for the Load More button
+  const loadMore = () => {
+    // Implement pagination later when performance is optimized
+    console.log('Load more functionality temporarily disabled for performance');
   };
   
   return (
@@ -441,11 +488,14 @@ const Discover: React.FC = () => {
           </div>
         )}
         
-        {/* Load more button - would implement pagination in a real app */}
-        {!loading && !error && filteredManga.length > 0 && (
+        {/* Load more button - disabled for now to improve performance */}
+        {!loading && !error && filteredManga.length > 0 && false && (
           <div className="flex justify-center mt-10">
-            <button className="manga-gradient manga-border px-8 py-3 font-semibold transition-all transform hover:scale-105 hover:rotate-2 manga-title">
-              Load More
+            <button 
+              onClick={loadMore}
+              disabled={loading}
+              className="manga-gradient manga-border px-8 py-3 font-semibold transition-all transform hover:scale-105 hover:rotate-2 manga-title">
+              {loading ? 'Loading...' : 'Load More'}
             </button>
           </div>
         )}

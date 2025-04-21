@@ -40,15 +40,7 @@ type MangaItem = {
   manga_id?: string;
 };
 
-// Helper function to resolve image URL from Supabase storage
-const resolveImageUrl = (path: string | null) => {
-  if (!path) return null;
-  if (path.startsWith('http')) return path;
-  
-  // Get public URL from Supabase storage
-  const { data } = supabase.storage.from('manga_covers').getPublicUrl(path);
-  return data.publicUrl;
-};
+
 
 const MyList: React.FC = () => {
   const { user, loading: authLoading } = useAuth();
@@ -118,25 +110,58 @@ const MyList: React.FC = () => {
           // Get total chapters for progress calculation
           const { data: chapters } = await supabase
             .from('chapters')
-            .select('id')
+            .select('id, chapter_number')
+            .eq('manga_id', mangaId)
+            .order('chapter_number', { ascending: true });
+            
+          const maxChapterNumber = chapters && chapters.length > 0 ? 
+            Math.max(...chapters.map((ch: any) => ch.chapter_number)) : 0;
+          
+          // Get the current chapter from the reading list entry (if in reading list)
+          let currentChapter = item.current_chapter || 1;
+          
+          // If we're in favorites tab, we need to get the current chapter from the reading list
+          if (activeTab === 'favorites') {
+            const { data: readingListEntry } = await supabase
+              .from('user_reading_lists')
+              .select('current_chapter, status')
+              .eq('user_id', user.id)
+              .eq('manga_id', mangaId)
+              .single();
+              
+            if (readingListEntry) {
+              currentChapter = readingListEntry.current_chapter || 1;
+            }
+          }
+          
+          // Determine current reading progress percentage
+          const progress = maxChapterNumber > 0 
+            ? Math.round((currentChapter / maxChapterNumber) * 100) 
+            : 0;
+          
+          // Determine last updated date
+          const lastUpdated = item.updated_at || manga.updated_at || new Date().toISOString();
+          
+          // Get manga genres
+          const { data: genreData } = await supabase
+            .from('manga_genres')
+            .select('genres(name)')
             .eq('manga_id', mangaId);
             
-          const totalChapters = chapters?.length || 0;
-          const chaptersRead = readingProgress[mangaId]?.count || 0;
-          const progress = totalChapters > 0 ? Math.round((chaptersRead / totalChapters) * 100) : 0;
+          const genres = genreData?.map((g: any) => g.genres.name) || [];
           
           return {
             id: item.id,
-            manga_id: mangaId,
-            title: manga.title || `Manga ${mangaId}`,
-            coverImage: resolveImageUrl(manga.cover_image) || `https://picsum.photos/seed/${mangaId}/300/400`,
+            title: manga.title || 'Unknown Title',
+            coverImage: manga.cover_image || '',
             status: item.status || 'reading',
-            progress: progress,
-            current_chapter: item.current_chapter || chaptersRead,
-            total_chapters: totalChapters,
-            rating: item.rating,
-            lastUpdated: item.updated_at || item.created_at,
-            genres: manga.genres?.map((g: any) => g.genres?.name) || []
+            progress,
+            current_chapter: currentChapter,
+            total_chapters: maxChapterNumber,
+            rating: manga.rating,
+            lastUpdated,
+            genres,
+            manga_id: mangaId
           };
         }));
         
@@ -173,7 +198,7 @@ const MyList: React.FC = () => {
     if (!user) return;
     
     try {
-      setActionLoading({...actionLoading, [mangaId]: true});
+      setActionLoading(prev => ({ ...prev, [mangaId]: true }));
       
       let response;
       if (activeTab === 'reading') {
@@ -193,7 +218,7 @@ const MyList: React.FC = () => {
       console.error(`Error removing from ${activeTab}:`, err);
       alert(`Failed to remove: ${err.message}`);
     } finally {
-      setActionLoading({...actionLoading, [mangaId]: false});
+      setActionLoading(prev => ({ ...prev, [mangaId]: false }));
     }
   };
   
@@ -202,22 +227,33 @@ const MyList: React.FC = () => {
     if (!user) return;
     
     try {
-      setActionLoading({...actionLoading, [mangaId]: true});
+      setActionLoading(prev => ({ ...prev, [mangaId]: true }));
       
-      const response = await updateReadingStatus(user.id, mangaId, newStatus);
+      // Find the current manga to get its current chapter
+      const currentManga = mangaList.find(manga => manga.manga_id === mangaId);
+      const currentChapter = currentManga?.current_chapter || 1;
       
-      if (response.error) throw new Error(response.error.message);
+      // Update in database
+      const { error } = await updateReadingStatus(
+        user.id, 
+        mangaId, 
+        newStatus, 
+        currentChapter
+      );
       
-      // Update UI
-      setMangaList(mangaList.map(item => 
-        item.manga_id === mangaId ? {...item, status: newStatus} : item
-      ));
+      if (error) throw new Error(error.message);
       
+      // Update local state
+      setMangaList(prev => 
+        prev.map(manga => 
+          manga.manga_id === mangaId ? { ...manga, status: newStatus } : manga
+        )
+      );
     } catch (err: any) {
       console.error('Error updating status:', err);
-      alert(`Failed to update status: ${err.message}`);
+      // Could show error toast here
     } finally {
-      setActionLoading({...actionLoading, [mangaId]: false});
+      setActionLoading(prev => ({ ...prev, [mangaId]: false }));
     }
   };
   

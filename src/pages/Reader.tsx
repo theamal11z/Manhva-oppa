@@ -66,7 +66,7 @@ const Reader: React.FC = () => {
   const [showControls, setShowControls] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [readingDirection, setReadingDirection] = useState<'rtl' | 'ltr'>('rtl'); // Manga is typically right-to-left
-  const [readingMode, setReadingMode] = useState<'single' | 'continuous' | 'webtoon'>('single');
+  const [readingMode, setReadingMode] = useState<'single' | 'continuous' | 'webtoon'>('webtoon'); // Webtoon as default
   const [darkMode, setDarkMode] = useState(false);
   const [fullScreen, setFullScreen] = useState(false);
   const [markingCompleted, setMarkingCompleted] = useState(false);
@@ -76,41 +76,85 @@ const Reader: React.FC = () => {
   const [pinchEnabled, setPinchEnabled] = useState(true);
   const [pageSpacing, setPageSpacing] = useState(16);
   const [controlAutoHide, setControlAutoHide] = useState(true);
+  const [showNextChapterPrompt, setShowNextChapterPrompt] = useState(false);
+  const [nextChapterNumber, setNextChapterNumber] = useState<number | null>(null);
+  const [hasNextChapter, setHasNextChapter] = useState(false);
   const controlsTimerRef = useRef<number | null>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
 
-  // Helper to check if this is the last chapter (for demo, always true; you can enhance this logic)
+  // Helper to check if this is the last chapter
   const isLastChapter = () => {
-    // TODO: Implement actual logic to check if this is the last chapter
-    return true;
+    // Return the opposite of hasNextChapter
+    return !hasNextChapter;
   };
 
-  // Update reading status when chapter loads
+  // Update reading status when chapter loads - mark as reading
   useEffect(() => {
     const updateStatus = async () => {
       if (user && mangaId && chapterId) {
         try {
+          // When a chapter first loads, mark it as 'reading'
           await updateReadingStatus(user.id, mangaId, 'reading', Number(chapterId));
+          console.log(`Started reading chapter ${chapterId}`);
         } catch (err) {
-          // Optionally, handle error
+          console.error('Error updating reading status:', err);
         }
       }
     };
     updateStatus();
   }, [user, mangaId, chapterId]);
+  
+  // Track reading progress based on current page in single page mode
+  useEffect(() => {
+    // Only track progress in single page mode, for continuous/webtoon modes we'll use scroll position
+    if (readingMode === 'single' && user && mangaId && chapterId && pages.length > 0) {
+      // If user is at the last page, consider the chapter completed
+      if (currentPage === pages.length) {
+        const markAsCompleted = async () => {
+          try {
+            await updateReadingStatus(user.id, mangaId, 'reading', Number(chapterId));
+            console.log(`Completed chapter ${chapterId} (reached last page)`);
+          } catch (err) {
+            console.error('Error marking chapter as completed:', err);
+          }
+        };
+        markAsCompleted();
+      } else if (currentPage > 1) {
+        // Update progress periodically as user reads through pages
+        // We don't want to flood the database with updates on every page change
+        // so we update every 3rd page or so
+        if (currentPage % 3 === 0) {
+          const updateProgress = async () => {
+            try {
+              await updateReadingStatus(user.id, mangaId, 'reading', Number(chapterId));
+              console.log(`Updated reading progress: ${currentPage}/${pages.length}`);
+            } catch (err) {
+              console.error('Error updating reading progress:', err);
+            }
+          };
+          updateProgress();
+        }
+      }
+    }
+  }, [user, mangaId, chapterId, currentPage, pages.length, readingMode]);
 
-  // Load persisted reader settings
+  // Load persisted reader settings but default to webtoon mode if not set
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('readerSettings') || '{}');
-      if (saved.readingMode) setReadingMode(saved.readingMode);
       if (saved.readingDirection) setReadingDirection(saved.readingDirection);
-      if (typeof saved.darkMode === 'boolean') setDarkMode(saved.darkMode);
-      if (typeof saved.controlAutoHide === 'boolean') setControlAutoHide(saved.controlAutoHide);
-      if (typeof saved.pageSpacing === 'number') setPageSpacing(saved.pageSpacing);
-      if (typeof saved.zoomStep === 'number') setZoomStep(saved.zoomStep);
-      if (typeof saved.pinchEnabled === 'boolean') setPinchEnabled(saved.pinchEnabled);
-    } catch {}
+      // Default to webtoon if not explicitly set by user
+      if (saved.readingMode) setReadingMode(saved.readingMode);
+      else setReadingMode('webtoon'); // Ensure webtoon is the default
+      if (saved.darkMode !== undefined) setDarkMode(saved.darkMode);
+      if (saved.zoomStep !== undefined) setZoomStep(saved.zoomStep);
+      if (saved.pinchEnabled !== undefined) setPinchEnabled(saved.pinchEnabled);
+      if (saved.pageSpacing !== undefined) setPageSpacing(saved.pageSpacing);
+      if (saved.controlAutoHide !== undefined) setControlAutoHide(saved.controlAutoHide);
+    } catch (e) {
+      // Ignore errors from localStorage
+      setReadingMode('webtoon'); // Fallback to webtoon mode in case of errors
+    }
   }, []);
 
   // Save reader settings on change
@@ -124,11 +168,18 @@ const Reader: React.FC = () => {
 
   useEffect(() => {
     const fetchMangaData = async () => {
-      if (!mangaId || !chapterId) return;
-
       try {
         setLoading(true);
+        setError(null);
+        
+        // Exit early if no IDs
+        if (!mangaId || !chapterId) {
+          navigate('/');
+          return;
+        }
 
+        const chapter = parseInt(chapterId);
+        
         // Fetch manga title
         const { data: mangaData, error: mangaError } = await supabase
           .from('manga_entries')
@@ -175,6 +226,23 @@ const Reader: React.FC = () => {
         if (chapterData) {
           setChapterTitle(`Chapter ${chapterData.chapter_number}${chapterData.title ? `: ${chapterData.title}` : ''}`);
         }
+        
+        // Check if next chapter exists
+        const { data: nextChapterData, error: nextChapterError } = await supabase
+          .from('chapters')
+          .select('chapter_number')
+          .eq('manga_id', mangaId)
+          .gt('chapter_number', chapter)
+          .order('chapter_number', { ascending: true })
+          .limit(1);
+        
+        if (!nextChapterError && nextChapterData && nextChapterData.length > 0) {
+          setHasNextChapter(true);
+          setNextChapterNumber(nextChapterData[0].chapter_number);
+        } else {
+          setHasNextChapter(false);
+          setNextChapterNumber(null);
+        }
 
         // Get chapter pages
         const { data: pagesData, error: pagesError } = await supabase
@@ -191,31 +259,24 @@ const Reader: React.FC = () => {
             url: page.image_url,
             number: page.page_number
           }));
-
           setPages(formattedPages);
         } else {
           // If no pages found, show a placeholder
-          setPages([{
-            id: 'placeholder',
-            url: `https://via.placeholder.com/800x1200/222222/FF5555?text=No+Pages+Found`,
-            number: 1
-          }]);
+          const demoPages = Array.from({ length: 10 }, (_, i) => ({
+            id: `demo-${i+1}`,
+            url: `https://picsum.photos/seed/${mangaId}-${chapter}-${i+1}/800/1200`,
+            number: i + 1
+          }));
+          setPages(demoPages);
         }
-      } catch (err: any) {
+        
+      } catch (err) {
         console.error('Error fetching manga data:', err);
-        setError(err.message || 'Failed to load manga');
-
-        // Show a placeholder if error
-        setPages([{
-          id: 'error',
-          url: `https://via.placeholder.com/800x1200/222222/FF5555?text=Error+Loading+Chapter`,
-          number: 1
-        }]);
+        setError(err instanceof Error ? err.message : 'Failed to load the chapter');
       } finally {
         setLoading(false);
       }
     };
-
     fetchMangaData();
   }, [mangaId, chapter, navigate, chapterId]);
 
@@ -301,9 +362,19 @@ const Reader: React.FC = () => {
     }
 
     if (newPage > pages.length) {
-      // Go to next chapter
-      navigate(`/reader/${mangaId}/chapter/${chapter + 1}`);
+      // Show next chapter prompt if available instead of automatically navigating
+      if (hasNextChapter && nextChapterNumber !== null) {
+        setShowNextChapterPrompt(true);
+      } else {
+        // If no next chapter, just stay on the last page
+        setCurrentPage(pages.length);
+      }
       return;
+    }
+    
+    // If we're moving away from the last page, hide the next chapter prompt
+    if (showNextChapterPrompt) {
+      setShowNextChapterPrompt(false);
     }
 
     setCurrentPage(newPage);
@@ -320,6 +391,18 @@ const Reader: React.FC = () => {
     } else if (document.exitFullscreen) {
       document.exitFullscreen();
       setFullScreen(false);
+    }
+  };
+  
+  // Navigate to the next chapter when prompted
+  const goToNextChapter = () => {
+    if (hasNextChapter && nextChapterNumber !== null) {
+      // Mark current chapter as completed before navigating
+      if (user && mangaId && chapterId) {
+        updateReadingStatus(user.id, mangaId, 'completed', Number(chapterId))
+          .then(() => console.log(`Marked chapter ${chapterId} as completed`));
+      }
+      navigate(`/reader/${mangaId}/chapter/${nextChapterNumber}`);
     }
   };
 
@@ -669,7 +752,31 @@ const Reader: React.FC = () => {
                   contentClass="reader-page max-h-full"
                 >
                   {currentPageData && (
-                    <PageImageViewer page={currentPageData} darkMode={darkMode} />
+                    <>
+                      <PageImageViewer page={currentPageData} darkMode={darkMode} />
+                      
+                      {/* Next Chapter Prompt - show when on last page */}
+                      {showNextChapterPrompt && hasNextChapter && (
+                        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-black/80 text-white px-6 py-4 rounded-lg manga-shadow z-50 flex flex-col items-center animate-pulse">
+                          <p className="mb-2">You've reached the end of this chapter!</p>
+                          <button 
+                            onClick={() => {
+                              // Mark current chapter as completed before moving to next chapter
+                              if (user && mangaId && chapterId) {
+                                updateReadingStatus(user.id, mangaId, 'completed', Number(chapterId))
+                                  .then(() => console.log(`Marked chapter ${chapterId} as completed`));
+                              }
+                              goToNextChapter();
+                            }}
+                            disabled={loading}
+                            className="manga-border bg-red-500/70 hover:bg-red-500 px-4 py-2 text-white transition-all transform hover:scale-105"
+                          >
+                            Continue to Chapter {nextChapterNumber}
+                            <ArrowRight className="inline-block ml-2 w-4 h-4" />
+                          </button>
+                      </div>
+                      )}
+                    </>
                   )}
                 </TransformComponent>
               </>
@@ -677,41 +784,67 @@ const Reader: React.FC = () => {
           </TransformWrapper>
         </div>
       ) : (
-        <div className="flex-1 overflow-auto p-4 flex flex-col" style={{ gap: `${readingMode === 'webtoon' ? 0 : pageSpacing}px` }}>
+        <div className="flex-1 overflow-auto p-4 flex flex-col relative" style={{ gap: `${readingMode === 'webtoon' ? 0 : pageSpacing}px` }}>
           {pages.map(
             page => (
               <PageImageViewer key={page.id} page={page} darkMode={darkMode} />
             ))}
+            
+          {/* No separate next chapter prompt - we'll integrate it into the controls */}
         </div>
       )}
 
       {/* Bottom navigation bar with settings button */}
       {showControls && (
         <div className="manga-panel p-4 bg-black/50 sm:transform sm:-rotate-2 flex justify-between items-center z-10">
-          <button
-            onClick={() => navigatePage(readingDirection === 'rtl' ? 1 : -1)}
-            disabled={readingDirection === 'rtl' ? currentPage === pages.length : currentPage === 1}
-            className="manga-border px-4 py-2 text-sm hover:text-red-500 transition-all transform hover:scale-105 hover:rotate-1 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {readingDirection === 'rtl' ? 'Next' : 'Previous'}
-            {readingDirection === 'rtl' ? <ArrowRight className="inline-block ml-2 w-4 h-4" /> : <ArrowLeft className="inline-block mr-2 w-4 h-4" />}
-          </button>
+          {/* In single page mode, show page navigation. In scroll/webtoon mode, show chapter navigation for left button */}
+          {readingMode === 'single' ? (
+            <button
+              onClick={() => navigatePage(readingDirection === 'rtl' ? 1 : -1)}
+              disabled={readingDirection === 'rtl' ? currentPage === pages.length : currentPage === 1}
+              className="manga-border px-4 py-2 text-sm hover:text-red-500 transition-all transform hover:scale-105 hover:rotate-1 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {readingDirection === 'rtl' ? 'Next Page' : 'Previous Page'}
+              {readingDirection === 'rtl' ? <ArrowRight className="inline-block ml-2 w-4 h-4" /> : <ArrowLeft className="inline-block mr-2 w-4 h-4" />}
+            </button>
+          ) : (
+            <button
+              onClick={() => chapter > 1 ? navigate(`/reader/${mangaId}/chapter/${chapter - 1}`) : undefined}
+              disabled={chapter <= 1}
+              className="manga-border px-4 py-2 text-sm hover:text-red-500 transition-all transform hover:scale-105 hover:rotate-1 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Previous Chapter
+              <ArrowLeft className="inline-block ml-2 w-4 h-4" />
+            </button>
+          )}
           
           <div className="flex items-center space-x-2">
-            <div className="text-center hidden sm:block">
-              <span className="manga-border px-3 py-1 text-sm bg-black/50 manga-shadow">
-                Page {currentPage} of {pages.length}
-              </span>
-            </div>
+            {readingMode === 'single' && (
+              <>
+                <div className="text-center hidden sm:block">
+                  <span className="manga-border px-3 py-1 text-sm bg-black/50 manga-shadow">
+                    Page {currentPage} of {pages.length}
+                  </span>
+                </div>
+                
+                <input
+                  type="range"
+                  min={1}
+                  max={pages.length}
+                  value={currentPage}
+                  onChange={e => setCurrentPage(Math.min(Math.max(1, +e.target.value), pages.length))}
+                  className="w-24 sm:w-32 mx-2 manga-border p-1"
+                />
+              </>
+            )}
             
-            <input
-              type="range"
-              min={1}
-              max={pages.length}
-              value={currentPage}
-              onChange={e => setCurrentPage(Math.min(Math.max(1, +e.target.value), pages.length))}
-              className="w-24 sm:w-32 mx-2 manga-border p-1"
-            />
+            {readingMode !== 'single' && (
+              <div className="text-center">
+                <span className="manga-border px-3 py-1 text-sm bg-black/50 manga-shadow">
+                  Chapter {chapter}
+                </span>
+              </div>
+            )}
             
             <button
               onClick={handleSettingsClick}
@@ -721,14 +854,33 @@ const Reader: React.FC = () => {
             </button>
           </div>
           
-          <button
-            onClick={() => navigatePage(readingDirection === 'rtl' ? -1 : 1)}
-            disabled={readingDirection === 'rtl' ? currentPage === 1 : currentPage === pages.length}
-            className="manga-border px-4 py-2 text-sm hover:text-red-500 transition-all transform hover:scale-105 hover:rotate-1 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {readingDirection === 'rtl' ? 'Previous' : 'Next'}
-            {readingDirection === 'rtl' ? <ArrowLeft className="inline-block ml-2 w-4 h-4" /> : <ArrowRight className="inline-block ml-2 w-4 h-4" />}
-          </button>
+          {/* In single page mode, show page navigation. In scroll/webtoon mode, show chapter navigation for right button */}
+          {readingMode === 'single' ? (
+            <button
+              onClick={() => navigatePage(readingDirection === 'rtl' ? -1 : 1)}
+              disabled={readingDirection === 'rtl' ? currentPage === 1 : currentPage === pages.length}
+              className="manga-border px-4 py-2 text-sm hover:text-red-500 transition-all transform hover:scale-105 hover:rotate-1 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {readingDirection === 'rtl' ? 'Previous Page' : 'Next Page'}
+              {readingDirection === 'rtl' ? <ArrowLeft className="inline-block ml-2 w-4 h-4" /> : <ArrowRight className="inline-block ml-2 w-4 h-4" />}
+            </button>
+          ) : (
+            <button
+              onClick={hasNextChapter ? () => {
+                // Mark current chapter as completed before moving to next
+                if (user && mangaId && chapterId) {
+                  updateReadingStatus(user.id, mangaId, 'completed', Number(chapterId))
+                    .then(() => console.log(`Marked chapter ${chapterId} as completed`));
+                }
+                goToNextChapter();
+              } : () => {}}
+              disabled={!hasNextChapter}
+              className="manga-border px-4 py-2 text-sm hover:text-red-500 transition-all transform hover:scale-105 hover:rotate-1 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next Chapter
+              <ArrowRight className="inline-block ml-2 w-4 h-4" />
+            </button>
+          )}
         </div>
       )}
     </div>

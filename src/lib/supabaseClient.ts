@@ -152,6 +152,8 @@ export const addMangaEntry = async (mangaData: any) => {
   // Separate genres and tags from the manga data
   const { genres, tags, ...mangaDetails } = mangaData;
   
+  // Log the payload for debugging
+  console.log('[addMangaEntry] Payload sent to Supabase:', mangaDetails);
   // Insert the manga entry first
   const { data: newManga, error } = await supabase
     .from('manga_entries')

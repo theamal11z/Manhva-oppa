@@ -1,16 +1,44 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Save, Upload, ArrowLeft, AlertTriangle, Plus, X as XIcon } from 'lucide-react';
 import { addMangaEntry, updateMangaEntry, uploadCoverImage } from '../../lib/supabaseClient';
 
 type MangaFormProps = {
-  manga?: any;
+  manga?: Manga;
   onComplete: () => void;
   onCancel: () => void;
 };
 
+interface Manga {
+  id?: string;
+  title: string;
+  description: string;
+  author: string;
+  artist: string;
+  status: string;
+  type: string;
+  year: number;
+  age_rating: 'all' | '13+' | '16+' | '18+';
+  cover_image?: string;
+  genres?: { genres: { name: string } }[];
+  tags?: { tags: { name: string } }[];
+}
+
+interface MangaFormData {
+  title: string;
+  description: string;
+  author: string;
+  artist: string;
+  status: string;
+  type: string;
+  year: number;
+  age_rating: 'all' | '13+' | '16+' | '18+';
+}
+
+
+
 const MangaForm: React.FC<MangaFormProps> = ({ manga, onComplete, onCancel }) => {
   const isEditing = !!manga;
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<MangaFormData>({
     title: manga?.title || '',
     description: manga?.description || '',
     author: manga?.author || '',
@@ -18,9 +46,10 @@ const MangaForm: React.FC<MangaFormProps> = ({ manga, onComplete, onCancel }) =>
     status: manga?.status || 'ongoing',
     type: manga?.type || 'manga',
     year: manga?.year || new Date().getFullYear(),
-    age_rating: manga?.age_rating || 'all',
+    age_rating: manga?.age_rating && ['all', '13+', '16+', '18+'].includes(manga.age_rating) ? manga.age_rating : 'all',
   });
   const [coverImage, setCoverImage] = useState<File | null>(null);
+  const [coverUrl, setCoverUrl] = useState<string>(manga?.cover_image && manga.cover_image.startsWith('http') ? manga.cover_image : '');
   const [coverPreview, setCoverPreview] = useState<string>(manga?.cover_image || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,13 +73,14 @@ const MangaForm: React.FC<MangaFormProps> = ({ manga, onComplete, onCancel }) =>
     const file = e.target.files?.[0];
     if (file) {
       setCoverImage(file);
-      // Create a preview URL
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setCoverPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      setCoverUrl('');
     }
+  };
+
+  const handleCoverUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCoverUrl(e.target.value);
+    setCoverImage(null); // Clear file if URL is entered
+    setCoverPreview(e.target.value);
   };
   
   const addGenre = () => {
@@ -75,41 +105,58 @@ const MangaForm: React.FC<MangaFormProps> = ({ manga, onComplete, onCancel }) =>
     setSelectedTags(selectedTags.filter(t => t !== tag));
   };
 
+  // Allowed values for DB constraints
+  const allowedStatuses = ['ongoing', 'completed', 'hiatus', 'cancelled'];
+  const allowedTypes = ['manga', 'manhwa', 'manhua', 'webtoon', 'light_novel'];
+
+  const validateForm = (): string | null => {
+    if (!formData.title.trim()) return 'Title is required.';
+    if (!allowedStatuses.includes(formData.status)) return 'Invalid status value.';
+    if (!allowedTypes.includes(formData.type)) return 'Invalid type value.';
+    return null;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const errMsg = validateForm();
+    if (errMsg) {
+      setError(errMsg);
+      return;
+    }
     
     try {
       setLoading(true);
       let coverImageUrl = manga?.cover_image || '';
-      
-      // Upload cover image if provided
+
+      // Priority: file > url > existing
       if (coverImage) {
         const imagePath = `${Date.now()}-${coverImage.name}`;
         const uploadResult = await uploadCoverImage(coverImage, imagePath);
-        
         if (uploadResult.error) {
           throw new Error(`Failed to upload cover image: ${uploadResult.error.message}`);
         }
-        
-        // Get the public URL
         coverImageUrl = `https://iwybjtgyldetjzpgpjal.supabase.co/storage/v1/object/public/manga_covers/${imagePath}`;
+      } else if (coverUrl) {
+        coverImageUrl = coverUrl;
       }
-      
+
+      // Ensure age_rating is always a valid string for the DB
+      const allowedRatings = ['all', 'teen', 'mature', 'adult'];
+      const safeAgeRating = allowedRatings.includes(formData.age_rating) ? formData.age_rating : 'all';
       const mangaData = {
         ...formData,
+        age_rating: safeAgeRating,
         cover_image: coverImageUrl,
         genres: selectedGenres,
         tags: selectedTags
       };
-      
+
       if (isEditing) {
-        // Update existing manga
-        const { error } = await updateMangaEntry(manga.id, mangaData);
-        if (error) throw new Error(error.message);
+        // Assert that manga.id exists while editing
+        await updateMangaEntry(manga!.id!, mangaData);
       } else {
-        // Add new manga
-        const { error } = await addMangaEntry(mangaData);
-        if (error) throw new Error(error.message);
+        await addMangaEntry(mangaData);
       }
       
       onComplete();
@@ -121,8 +168,18 @@ const MangaForm: React.FC<MangaFormProps> = ({ manga, onComplete, onCancel }) =>
     }
   };
 
+  useEffect(() => {
+    if (coverImage) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCoverPreview(reader.result as string);
+      };
+      reader.readAsDataURL(coverImage);
+    }
+  }, [coverImage]);
+
   return (
-    <div className="manga-panel p-6 bg-black/30 h-full overflow-y-auto">
+    <div className="manga-panel p-6 bg-black/60 h-full overflow-y-auto border border-white/20 rounded-lg shadow-lg" style={{ position: 'relative', zIndex: 1 }}>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold manga-title">{isEditing ? 'Edit Manga' : 'Add New Manga'}</h2>
         <button 
@@ -145,7 +202,7 @@ const MangaForm: React.FC<MangaFormProps> = ({ manga, onComplete, onCancel }) =>
         </div>
       )}
       
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-6" style={{ position: 'static' }}>
         {/* Basic Information */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Left Column */}
@@ -161,7 +218,7 @@ const MangaForm: React.FC<MangaFormProps> = ({ manga, onComplete, onCancel }) =>
                 onChange={handleChange}
                 required
                 placeholder="Manga title"
-                className="w-full p-2 bg-black/30 border border-white/20 focus:border-red-500 focus:outline-none transition-colors"
+                className="w-full p-2 bg-black/30 border border-white/20 focus:border-red-500 focus:outline-none transition-colors relative z-20"
               />
             </div>
             
@@ -185,8 +242,7 @@ const MangaForm: React.FC<MangaFormProps> = ({ manga, onComplete, onCancel }) =>
                     </div>
                   )}
                 </div>
-                
-                <div className="flex-grow">
+                <div className="flex-grow space-y-2">
                   <label 
                     htmlFor="cover-upload" 
                     className="manga-border px-4 py-2 cursor-pointer inline-flex items-center gap-2 hover:text-blue-400 transition-colors"
@@ -201,7 +257,16 @@ const MangaForm: React.FC<MangaFormProps> = ({ manga, onComplete, onCancel }) =>
                     onChange={handleImageChange}
                     className="hidden"
                   />
-                  <p className="text-xs text-gray-400 mt-2">Recommended: 350×500px JPG or PNG</p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <input
+                      type="text"
+                      placeholder="Paste image URL..."
+                      value={coverUrl}
+                      onChange={handleCoverUrlChange}
+                      className="flex-grow p-2 bg-black/30 border border-white/20 focus:border-blue-500 focus:outline-none transition-colors text-xs relative z-20"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">Recommended: 350×500px JPG or PNG. You can upload or use a direct image URL.</p>
                 </div>
               </div>
             </div>
@@ -217,7 +282,7 @@ const MangaForm: React.FC<MangaFormProps> = ({ manga, onComplete, onCancel }) =>
                   value={formData.author}
                   onChange={handleChange}
                   placeholder="Author name"
-                  className="w-full p-2 bg-black/30 border border-white/20 focus:border-red-500 focus:outline-none transition-colors"
+                  className="w-full p-2 bg-black/30 border border-white/20 focus:border-red-500 focus:outline-none transition-colors relative z-20"
                 />
               </div>
               
@@ -230,7 +295,7 @@ const MangaForm: React.FC<MangaFormProps> = ({ manga, onComplete, onCancel }) =>
                   value={formData.artist}
                   onChange={handleChange}
                   placeholder="Artist name"
-                  className="w-full p-2 bg-black/30 border border-white/20 focus:border-red-500 focus:outline-none transition-colors"
+                  className="w-full p-2 bg-black/30 border border-white/20 focus:border-red-500 focus:outline-none transition-colors relative z-20"
                 />
               </div>
             </div>
@@ -244,7 +309,7 @@ const MangaForm: React.FC<MangaFormProps> = ({ manga, onComplete, onCancel }) =>
                   name="status"
                   value={formData.status}
                   onChange={handleChange}
-                  className="w-full p-2 bg-black/30 border border-white/20 focus:border-red-500 focus:outline-none transition-colors"
+                  className="w-full p-2 bg-black/30 border border-white/20 focus:border-red-500 focus:outline-none transition-colors relative z-20"
                 >
                   <option value="ongoing">Ongoing</option>
                   <option value="completed">Completed</option>
@@ -260,16 +325,14 @@ const MangaForm: React.FC<MangaFormProps> = ({ manga, onComplete, onCancel }) =>
                   name="type"
                   value={formData.type}
                   onChange={handleChange}
-                  className="w-full p-2 bg-black/30 border border-white/20 focus:border-red-500 focus:outline-none transition-colors"
+                  className="w-full p-2 bg-black/30 border border-white/20 focus:border-red-500 focus:outline-none transition-colors relative z-20"
                 >
                   <option value="manga">Manga</option>
                   <option value="manhwa">Manhwa</option>
                   <option value="manhua">Manhua</option>
                   <option value="webtoon">Webtoon</option>
-                  <option value="other">Other</option>
                 </select>
               </div>
-              
               <div>
                 <label htmlFor="year" className="block text-sm font-medium mb-2">Year</label>
                 <input
@@ -280,7 +343,7 @@ const MangaForm: React.FC<MangaFormProps> = ({ manga, onComplete, onCancel }) =>
                   max={new Date().getFullYear()}
                   value={formData.year}
                   onChange={handleChange}
-                  className="w-full p-2 bg-black/30 border border-white/20 focus:border-red-500 focus:outline-none transition-colors"
+                  className="w-full p-2 bg-black/30 border border-white/20 focus:border-red-500 focus:outline-none transition-colors relative z-20"
                 />
               </div>
             </div>
@@ -298,24 +361,25 @@ const MangaForm: React.FC<MangaFormProps> = ({ manga, onComplete, onCancel }) =>
                 value={formData.description}
                 onChange={handleChange}
                 placeholder="Enter a brief description"
-                className="w-full p-2 bg-black/30 border border-white/20 focus:border-red-500 focus:outline-none transition-colors"
+                className="w-full p-2 bg-black/30 border border-white/20 focus:border-red-500 focus:outline-none transition-colors relative z-20"
               />
             </div>
             
             {/* Age Rating */}
             <div>
-              <label htmlFor="age_rating" className="block text-sm font-medium mb-2">Age Rating</label>
+              <label htmlFor="age_rating" className="block text-sm font-medium mb-2">Age Rating <span className="text-red-500">*</span></label>
               <select
                 id="age_rating"
                 name="age_rating"
                 value={formData.age_rating}
                 onChange={handleChange}
-                className="w-full p-2 bg-black/30 border border-white/20 focus:border-red-500 focus:outline-none transition-colors"
+                required
+                className="w-full p-2 bg-black/30 border border-white/20 focus:border-red-500 focus:outline-none transition-colors relative z-20"
               >
                 <option value="all">All Ages</option>
-                <option value="teen">Teen (13+)</option>
-                <option value="mature">Mature (17+)</option>
-                <option value="adult">Adult (18+)</option>
+                <option value="13+">13+</option>
+                <option value="16+">16+</option>
+                <option value="18+">18+</option>
               </select>
             </div>
           </div>
