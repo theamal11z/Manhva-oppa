@@ -31,7 +31,16 @@ export const resetPassword = async (email: string) => {
 };
 
 // Manga-related helpers
-export const getMangaList = async (limit = 10, offset = 0) => {
+export const getGenres = async () => {
+  return supabase.from('genres').select('*').order('name', { ascending: true });
+};
+
+export const getMangaList = async (
+  limit = 10,
+  offset = 0,
+  orderBy: 'created_at' | 'popularity' = 'created_at',
+  orderDirection: 'asc' | 'desc' = 'desc'
+) => {
   return supabase
     .from('manga_entries')
     .select(`
@@ -40,7 +49,7 @@ export const getMangaList = async (limit = 10, offset = 0) => {
       tags:manga_tags(tags(*))
     `)
     .range(offset, offset + limit - 1)
-    .order('created_at', { ascending: false });
+    .order(orderBy, { ascending: orderDirection === 'asc' });
 };
 
 export const getMangaById = async (id: string) => {
@@ -101,6 +110,41 @@ export const removeFromFavorites = async (userId: string, mangaId: string) => {
     .from('user_favorites')
     .delete()
     .match({ user_id: userId, manga_id: mangaId });
+};
+
+// Function to get user favorites
+export const getUserFavorites = async (userId: string) => {
+  return supabase
+    .from('user_favorites')
+    .select(`
+      *,
+      manga:manga_entries(*)
+    `)
+    .eq('user_id', userId);
+};
+
+// Function to remove a manga from reading list
+export const removeFromReadingList = async (userId: string, mangaId: string) => {
+  return supabase
+    .from('user_reading_lists')
+    .delete()
+    .match({ user_id: userId, manga_id: mangaId });
+};
+
+// Function to update reading status
+export const updateReadingStatus = async (userId: string, mangaId: string, status: 'reading' | 'completed' | 'on_hold' | 'dropped' | 'plan_to_read', currentChapter?: number) => {
+  const updateData: any = {
+    user_id: userId,
+    manga_id: mangaId,
+    status,
+    updated_at: new Date().toISOString()
+  };
+  
+  if (currentChapter !== undefined) {
+    updateData.current_chapter = currentChapter;
+  }
+  
+  return supabase.from('user_reading_lists').upsert(updateData);
 };
 
 // Admin helpers

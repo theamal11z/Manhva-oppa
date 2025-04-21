@@ -13,49 +13,111 @@ import {
   User,
   Clock,
   AlertCircle,
+
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
-import { getMangaById, addToReadingList, addToFavorites } from '../lib/supabaseClient';
+import { 
+  getMangaById, 
+  addToReadingList, 
+  addToFavorites, 
+  getChaptersByMangaId,
+  supabase 
+} from '../lib/supabaseClient';
 
 type Chapter = {
   id: string;
-  number: number;
-  title: string;
-  releaseDate: string;
+  chapter_number: number;
+  title: string | null;
+  pages: number;
+  views: number;
+  created_at: string;
+  updated_at: string;
+  release_date?: string;
   read?: boolean;
 };
+
+import { updateReadingStatus } from '../lib/supabaseClient';
 
 const MangaDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+
+  
   const [manga, setManga] = useState<any | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'info' | 'chapters'>('info');
+  const [similarManga, setSimilarManga] = useState<any[]>([]);
+  const [inReadingList, setInReadingList] = useState(false);
+  const [inFavorites, setInFavorites] = useState(false);
+  const [userStatus, setUserStatus] = useState<string|null>(null);
+  const [userChapter, setUserChapter] = useState<number|null>(null);
+  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [statusSuccess, setStatusSuccess] = useState<string|null>(null);
   
+  const [loading, setLoading] = useState(true);
+  const [chaptersLoading, setChaptersLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'info' | 'chapters' | 'reviews'>('info');
+  
+  // Fetch manga details
   useEffect(() => {
     const fetchManga = async () => {
       if (!id) return;
       
       try {
         setLoading(true);
+        console.log('Fetching manga with ID:', id);
         const response = await getMangaById(id);
         
         if (response.error) throw new Error(response.error.message);
+        if (!response.data) throw new Error('Manga not found');
         
+        console.log('Manga data loaded:', response.data.title);
         setManga(response.data);
         
-        // For demo purposes, generate dummy chapters
-        const dummyChapters = Array.from({ length: 24 }, (_, i) => ({
-          id: `chapter-${i + 1}`,
-          number: i + 1,
-          title: `Chapter ${i + 1}: ${['The Beginning', 'Dark Shadows', 'New Power', 'Unexpected Alliance', 'Final Battle'][i % 5]}`,
-          releaseDate: new Date(Date.now() - (i * 7 * 24 * 60 * 60 * 1000)).toISOString(), // Each chapter a week apart
-          read: Math.random() > 0.7, // Some chapters marked as read
-        }));
+        // Fetch similar manga based on genres
+        if (response.data.genres && response.data.genres.length > 0) {
+          const genreIds = response.data.genres.map((g: any) => g.genres.id);
+          const { data: similarData } = await supabase
+            .from('manga_genres')
+            .select('manga_entries(*)')
+            .in('genre_id', genreIds)
+            .neq('manga_id', id)
+            .limit(6);
+            
+          if (similarData) {
+            const uniqueManga = Array.from(new Set(
+              similarData.map((item: any) => item.manga_entries.id)
+            )).map(uniqueId => 
+              similarData.find((item: any) => item.manga_entries.id === uniqueId)?.manga_entries
+            ).filter(Boolean).slice(0, 6);
+            
+            setSimilarManga(uniqueManga);
+          }
+        }
         
-        setChapters(dummyChapters.reverse()); // Latest chapters first
+        // Check if manga is in user's reading list
+        if (user) {
+          const { data: readingListData } = await supabase
+            .from('user_reading_lists')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('manga_id', id)
+            .single();
+            
+          setInReadingList(!!readingListData);
+          setUserStatus(readingListData?.status || null);
+          setUserChapter(readingListData?.current_chapter || null);
+          
+          // Check if manga is in user's favorites
+          const { data: favoritesData } = await supabase
+            .from('user_favorites')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('manga_id', id)
+            .single();
+            
+          setInFavorites(!!favoritesData);
+        }
       } catch (err: any) {
         console.error('Error fetching manga:', err);
         setError(err.message || 'Failed to fetch manga details');
@@ -65,7 +127,53 @@ const MangaDetail: React.FC = () => {
     };
     
     fetchManga();
-  }, [id]);
+  }, [id, user]);
+  
+  // Fetch chapters separately
+  useEffect(() => {
+    const fetchChapters = async () => {
+      if (!id) return;
+      
+      try {
+        setChaptersLoading(true);
+        const { data, error } = await getChaptersByMangaId(id, 100);
+        
+        if (error) throw new Error(error.message);
+        
+        // Sort chapters by number descending (newest first)
+        const sortedChapters = [...(data || [])].sort((a, b) => 
+          b.chapter_number - a.chapter_number
+        );
+        
+        // If user is logged in, check read status
+        if (user) {
+          const { data: readHistory } = await supabase
+            .from('reading_history')
+            .select('chapter_id')
+            .eq('user_id', user.id)
+            .eq('manga_id', id);
+            
+          const readChapterIds = new Set(
+            readHistory?.map(item => item.chapter_id) || []
+          );
+          
+          sortedChapters.forEach(chapter => {
+            // Add read property to chapter object
+            (chapter as any).read = readChapterIds.has(chapter.id);
+          });
+        }
+        
+        setChapters(sortedChapters);
+      } catch (err: any) {
+        console.error('Error fetching chapters:', err);
+        // Don't set main error - just log it
+      } finally {
+        setChaptersLoading(false);
+      }
+    };
+    
+    fetchChapters();
+  }, [id, user]);
   
   const handleAddToList = async (status: 'reading' | 'completed' | 'on_hold' | 'dropped' | 'plan_to_read') => {
     if (!user || !manga) return;
@@ -89,11 +197,14 @@ const MangaDetail: React.FC = () => {
     }
   };
 
+
+
   if (loading) {
     return (
-      <div className="pt-20 flex justify-center items-center min-h-screen">
-        <div className="manga-panel p-8 bg-black/50 transform rotate-2">
-          <p className="manga-title text-2xl">Loading manga details...</p>
+      <div className="flex justify-center items-center h-96">
+        <div className="manga-panel p-6 bg-black/50 transform rotate-2">
+          <div className="border-4 border-gray-800 border-t-red-500 rounded-full w-8 h-8 animate-spin mb-4 mx-auto"></div>
+          <div className="text-lg">Loading manga details...</div>
         </div>
       </div>
     );
@@ -101,8 +212,8 @@ const MangaDetail: React.FC = () => {
 
   if (error || !manga) {
     return (
-      <div className="pt-20 flex justify-center items-center min-h-screen">
-        <div className="manga-panel p-8 bg-black/50 transform -rotate-2">
+      <div className="flex justify-center items-center h-96">
+        <div className="manga-panel p-6 bg-black/50 transform -rotate-2">
           <div className="flex items-center gap-3">
             <AlertCircle className="w-6 h-6 text-red-500" />
             <p className="manga-title text-2xl text-red-500">Error: {error || 'Manga not found'}</p>
@@ -116,19 +227,33 @@ const MangaDetail: React.FC = () => {
     );
   }
 
+  // Process manga data for display
+  const resolveImageUrl = (path: string | null) => {
+    if (!path) return `https://picsum.photos/seed/${id}/600/800`;
+    if (path.startsWith('http')) return path;
+    
+    // Get public URL from Supabase storage
+    const { data } = supabase.storage.from('manga_covers').getPublicUrl(path);
+    return data.publicUrl;
+  };
+  
   // If we don't have actual data, use placeholder data
   const mangaData = {
     id: manga.id || id || 'unknown',
     title: manga.title || 'Manga Title',
     description: manga.description || 'No description available for this manga.',
-    coverImage: manga.cover_image_url || `https://picsum.photos/seed/${id}/600/800`,
+    coverImage: resolveImageUrl(manga.cover_image),
     author: manga.author || 'Unknown Author',
     artist: manga.artist || 'Unknown Artist',
     status: manga.status || 'ongoing',
-    releaseYear: manga.release_year || 2022,
-    rating: 4.7,
-    genres: manga.genres?.map((g: any) => g.genres?.name) || ['Action', 'Adventure', 'Fantasy'],
     type: manga.type || 'manga',
+    year: manga.year || new Date().getFullYear(),
+    rating: manga.rating || 4.5,
+    popularity: manga.popularity || 0,
+    genres: manga.genres?.map((g: any) => g.genres.name) || ['Action', 'Fantasy'],
+    tags: manga.tags?.map((t: any) => t.tags.name) || ['Magic', 'Adventure'],
+    ageRating: manga.age_rating || '13+',
+    totalChapters: manga.total_chapters || chapters.length || 0
   };
 
   return (
@@ -178,18 +303,18 @@ const MangaDetail: React.FC = () => {
               
               <button
                 onClick={() => handleAddToList('reading')}
-                className="block w-full bg-white/10 manga-border py-3 text-center font-semibold transition-all transform hover:scale-105 hover:rotate-1 manga-title"
+                className={`manga-gradient manga-border px-6 py-3 font-semibold transition-all transform hover:scale-105 hover:-rotate-3 flex items-center gap-2 ${inReadingList ? 'opacity-75' : ''}`}
               >
-                <Bookmark className="inline-block mr-2" />
-                Add to Reading List
+                <Bookmark className="w-5 h-5" />
+                {inReadingList ? 'Continue Reading' : 'Start Reading'}
               </button>
               
               <button
                 onClick={handleAddToFavorites}
-                className="block w-full bg-white/10 manga-border py-3 text-center font-semibold transition-all transform hover:scale-105 hover:-rotate-1 manga-title"
+                className={`${inFavorites ? 'bg-red-500/30' : 'bg-white/10'} manga-border px-6 py-3 font-semibold transition-all transform hover:scale-105 hover:rotate-3 flex items-center gap-2`}
               >
-                <Heart className="inline-block mr-2" />
-                Add to Favorites
+                <Heart className={`w-5 h-5 ${inFavorites ? 'text-red-500' : ''}`} />
+                {inFavorites ? 'In Favorites' : 'Add to Favorites'}
               </button>
               
               <button className="block w-full bg-white/10 manga-border py-3 text-center font-semibold transition-all transform hover:scale-105 hover:rotate-1 manga-title">
@@ -198,6 +323,69 @@ const MangaDetail: React.FC = () => {
               </button>
             </div>
           </div>
+          
+          {/* Manga Info */}
+          {user && (
+            <div className="my-4 flex flex-col sm:flex-row sm:items-center gap-2">
+              <span className="text-sm text-gray-400">Your Status:</span>
+              <select
+                value={userStatus || ''}
+                onChange={async (e) => {
+                  setStatusUpdating(true);
+                  setStatusSuccess(null);
+                  try {
+                    await updateReadingStatus(user.id, manga.id, e.target.value as 'reading' | 'completed' | 'on_hold' | 'dropped' | 'plan_to_read', userChapter || undefined);
+                    setUserStatus(e.target.value);
+                    setStatusSuccess('Status updated!');
+                  } catch {
+                    setStatusSuccess('Failed to update status');
+                  } finally {
+                    setStatusUpdating(false);
+                    setTimeout(() => setStatusSuccess(null), 1500);
+                  }
+                }}
+                className="manga-border px-2 py-1 bg-black/40 text-white rounded"
+                disabled={statusUpdating}
+              >
+                <option value="">Select status</option>
+                <option value="reading">Reading</option>
+                <option value="completed">Completed</option>
+                <option value="on_hold">On Hold</option>
+                <option value="dropped">Dropped</option>
+                <option value="plan_to_read">Plan to Read</option>
+              </select>
+              <div className="flex items-center gap-2 ml-4">
+                <span className="text-xs text-gray-400">Progress:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={chapters.length}
+                  value={userChapter || ''}
+                  onChange={async (e) => {
+                    const chapterNum = Number(e.target.value);
+                    setStatusUpdating(true);
+                    setStatusSuccess(null);
+                    try {
+                      await updateReadingStatus(user.id, manga.id, (userStatus || 'reading') as 'reading' | 'completed' | 'on_hold' | 'dropped' | 'plan_to_read', chapterNum);
+                      setUserChapter(chapterNum);
+                      setStatusSuccess('Progress updated!');
+                    } catch {
+                      setStatusSuccess('Failed to update progress');
+                    } finally {
+                      setStatusUpdating(false);
+                      setTimeout(() => setStatusSuccess(null), 1500);
+                    }
+                  }}
+                  className="manga-border px-2 py-1 w-16 bg-black/40 text-white rounded"
+                  disabled={statusUpdating}
+                />
+                <span className="text-xs text-gray-400">/ {chapters.length}</span>
+              </div>
+              {statusSuccess && (
+                <span className="ml-2 text-green-400 text-xs">{statusSuccess}</span>
+              )}
+            </div>
+          )}
           
           {/* Manga details */}
           <div className="w-full md:w-2/3 lg:w-3/4">
@@ -245,10 +433,10 @@ const MangaDetail: React.FC = () => {
                 
                 <div className="flex flex-col">
                   <span className="text-gray-400 text-sm">Released</span>
-                  <span className="font-semibold flex items-center gap-1">
-                    <Calendar className="w-4 h-4" />
-                    {mangaData.releaseYear}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-5 h-5 text-gray-400" />
+                    <span>{mangaData.year}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -292,59 +480,75 @@ const MangaDetail: React.FC = () => {
               </div>
             ) : (
               <div className="manga-panel bg-black/20 p-4">
-                <div className="space-y-2">
-                  {chapters.map((chapter, index) => (
-                    <Link 
-                      key={chapter.id}
-                      to={`/reader/${mangaData.id}/chapter/${chapter.number}`}
-                      className={`flex items-center justify-between p-3 manga-border ${chapter.read ? 'opacity-70' : ''} hover:bg-white/5 transition-colors transform hover:scale-[1.01] ${index % 2 ? 'hover:rotate-[0.5deg]' : 'hover:-rotate-[0.5deg]'}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="aspect-square w-10 h-10 flex items-center justify-center manga-panel bg-gray-800">
-                          <span className="font-bold">{chapter.number}</span>
+                {chaptersLoading ? (
+                  <div className="flex justify-center items-center h-32">
+                    <div className="border-4 border-gray-800 border-t-red-500 rounded-full w-8 h-8 animate-spin"></div>
+                  </div>
+                ) : chapters.length === 0 ? (
+                  <div className="flex justify-center items-center h-32">
+                    <p className="text-gray-400">No chapters available yet</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {chapters.map((chapter, index) => (
+                      <Link 
+                        key={chapter.id}
+                        to={`/reader/${mangaData.id}/chapter/${chapter.chapter_number}`}
+                        className={`flex items-center justify-between p-3 manga-border ${(chapter as any).read ? 'opacity-70' : ''} hover:bg-white/5 transition-colors transform hover:scale-[1.01] ${index % 2 ? 'hover:rotate-[0.5deg]' : 'hover:-rotate-[0.5deg]'}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="aspect-square w-10 h-10 flex items-center justify-center manga-panel bg-gray-800">
+                            <span className="font-bold">{chapter.chapter_number}</span>
+                          </div>
+                          <div>
+                            <h3 className="font-semibold">{chapter.title || `Chapter ${chapter.chapter_number}`}</h3>
+                            <p className="text-sm text-gray-400">
+                              {new Date(chapter.created_at).toLocaleDateString()}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <h3 className="font-semibold">{chapter.title}</h3>
-                          <p className="text-sm text-gray-400">
-                            {new Date(chapter.releaseDate).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-                      {chapter.read && (
-                        <span className="text-sm text-gray-400 manga-border px-2 py-1">Read</span>
-                      )}
-                    </Link>
-                  ))}
-                </div>
+                        {(chapter as any).read && (
+                          <span className="text-sm text-gray-400 manga-border px-2 py-1">Read</span>
+                        )}
+                      </Link>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
         </div>
         
-        {/* Related manga section */}
+        {/* Similar manga section */}
         <div className="mt-16">
           <h2 className="manga-title text-2xl mb-6 transform -rotate-1">Similar Titles</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
-            {Array.from({ length: 6 }).map((_, index) => (
-              <Link 
-                key={`related-${index}`}
-                to={`/manga/related-${index}`}
-                className="group relative aspect-[3/4] manga-panel overflow-hidden cursor-pointer transform hover:scale-105 transition-all duration-300"
-                style={{ transform: `rotate(${index % 2 ? 1 : -1}deg)` }}
-              >
-                <img
-                  src={`https://picsum.photos/seed/related${index}/300/400`}
-                  alt={`Related manga ${index + 1}`}
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                  <div className="absolute bottom-0 p-4 w-full">
-                    <h3 className="text-lg manga-title transform -rotate-2">Related Title {index + 1}</h3>
+          {similarManga.length > 0 ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
+              {similarManga.map((relatedManga, index) => (
+                <Link 
+                  key={relatedManga.id}
+                  to={`/manga/${relatedManga.id}`}
+                  className="group relative aspect-[3/4] manga-panel overflow-hidden cursor-pointer transform hover:scale-105 transition-all duration-300"
+                  style={{ transform: `rotate(${index % 2 ? 1 : -1}deg)` }}
+                >
+                  <img
+                    src={resolveImageUrl(relatedManga.cover_image)}
+                    alt={relatedManga.title}
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                    <div className="absolute bottom-0 p-4 w-full">
+                      <h3 className="text-lg manga-title transform -rotate-2">{relatedManga.title}</h3>
+                    </div>
                   </div>
-                </div>
-              </Link>
-            ))}
-          </div>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="flex justify-center items-center h-32 manga-panel bg-black/20">
+              <p className="text-gray-400">No similar titles found</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

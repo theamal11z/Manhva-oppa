@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import { supabase } from '../lib/supabaseClient';
+import { getRecommendations, addToReadingList } from '../lib/supabaseClient';
 
 const Home: React.FC = () => {
   const { user } = useAuth();
@@ -34,39 +35,66 @@ const Home: React.FC = () => {
     return data.publicUrl;
   };
 
-  // Load featured manga
+  // Load featured manga with enhanced data fetching
   useEffect(() => {
     const loadFeatured = async () => {
-      const { data, error } = await supabase
-        .from('manga_entries')
-        .select('id, title, description, popularity, cover_image_url, cover_image, image_url')
-        .order('popularity', { ascending: false })
-        .limit(1)
-        .single();
-      if (!error && data) {
-        setFeaturedData(data);
-        const { data: chap, error: chapErr } = await supabase
-          .from('chapters')
-          .select('chapter_number')
-          .eq('manga_id', data.id)
-          .order('chapter_number', { ascending: true })
+      try {
+        setLoading(true);
+        // Get most popular manga for featured section
+        const { data, error } = await supabase
+          .from('manga_entries')
+          .select('id, title, description, popularity, cover_image')
+          .order('popularity', { ascending: false })
           .limit(1)
           .single();
-        if (!chapErr && chap) setFeaturedChapterNumber(chap.chapter_number);
+          
+        if (error) throw error;
+        if (data) {
+          console.log('Featured manga loaded:', data.title);
+          setFeaturedData(data);
+          
+          // Get first chapter for the Start Reading button
+          const { data: chapters, error: chapErr } = await supabase
+            .from('chapters')
+            .select('id, chapter_number')
+            .eq('manga_id', data.id)
+            .order('chapter_number', { ascending: true })
+            .limit(1);
+              
+          if (chapErr) throw chapErr;
+          if (chapters && chapters.length > 0) {
+            setFeaturedChapterNumber(chapters[0].chapter_number);
+            console.log(`First chapter found: Chapter ${chapters[0].chapter_number}`);
+          } else {
+            console.log('No chapters found for this manga');
+          }
+        }
+      } catch (err: any) {
+        console.error('Error loading featured manga:', err);
+        setError(err.message || 'Failed to load featured manga');
+      } finally {
+        setLoading(false);
       }
     };
+    
     loadFeatured();
   }, []);
 
-  // Derived hero values
+  // Derived hero values with better fallbacks and processing
   const heroImage = featuredData ? (() => {
-    const raw = featuredData.cover_image_url || featuredData.cover_image || featuredData.image_url || '';
+    const raw = featuredData.cover_image || '';
     return raw.startsWith('http') ? raw : (raw ? resolvePublicUrl(raw) : '');
   })() : 'https://images.unsplash.com/photo-1612036782180-6f0b6cd846fe?auto=format&fit=crop&q=80';
+  
+  // Process title for display - split for styling if it has multiple words
   const heroTitle = featuredData?.title || 'Spirit Hunter';
+  const heroTitleParts = heroTitle.split(' ');
+  const heroTitleFirst = heroTitleParts[0];
+  const heroTitleRest = heroTitleParts.slice(1).join(' ');
+  
   const heroDescription = featuredData?.description || 'Follow the journey of a young exorcist as she battles supernatural forces in modern-day Tokyo. A thrilling tale of action, mystery, and redemption.';
-  const heroRating = featuredData?.popularity || 4.8;
-  const heroChapterCount = featuredChapterNumber;
+  const heroRating = featuredData?.popularity ? Number(featuredData.popularity).toFixed(1) : '4.8';
+  const heroChapterCount = featuredChapterNumber || 1;
   const heroTrendingRank = 1;
 
   // Reset pagination and list on tab or search change
@@ -95,11 +123,7 @@ const Home: React.FC = () => {
             .order('created_at', { ascending: false })
             .range(offset, offset + limit - 1);
         } else if (activeTab === 'recommended') {
-          response = await supabase
-            .from('manga_entries')
-            .select(`*, genres:manga_genres(genres(*)), tags:manga_tags(tags(*))`)
-            .order('popularity', { ascending: false })
-            .range(offset, offset + limit - 1);
+          response = await getRecommendations(limit);
         } else if (activeTab === 'search') {
           response = await supabase
             .from('manga_entries')
@@ -117,7 +141,7 @@ const Home: React.FC = () => {
 
         // Map to UI format
         const items = (response.data || []).map((item: any) => {
-          const raw = item.cover_image_url || item.cover_image || item.image_url || '';
+          const raw = item.cover_image || '';
           const imageUrl = raw
             ? (raw.startsWith('http') ? raw : resolvePublicUrl(raw))
             : `https://picsum.photos/seed/${item.id}/300/400`;
@@ -144,16 +168,50 @@ const Home: React.FC = () => {
   }, [activeTab, page, searchTerm]);
 
   const handleAddFavorite = async (mangaId: string) => {
-    if (!user) return;
+    if (!user) {
+      window.alert('Please log in to add to favorites');
+      return;
+    }
+    
+    // Check if already in favorites
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
+        .from('user_favorites')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('manga_id', mangaId)
+        .single();
+        
+      if (data) {
+        window.alert('This manga is already in your favorites!');
+        return;
+      }
+      
+      // Add to favorites if not already there
+      const { error: insertError } = await supabase
         .from('user_favorites')
         .insert({ user_id: user.id, manga_id: mangaId });
-      if (error) throw error;
+        
+      if (insertError) throw insertError;
       window.alert('Added to favorites!');
     } catch (err: any) {
       console.error('Error adding to favorites:', err);
-      window.alert('Failed to add to favorites.');
+      window.alert('Failed to add to favorites: ' + (err.message || 'Unknown error'));
+    }
+  };
+
+  const handleAddReadingList = async (mangaId: string) => {
+    if (!user) {
+      window.alert('Please log in to add to your reading list');
+      return;
+    }
+    try {
+      const { error } = await addToReadingList(user.id, mangaId, 'plan_to_read');
+      if (error) throw error;
+      window.alert('Added to your reading list!');
+    } catch (err: any) {
+      console.error('Error adding to reading list:', err);
+      window.alert('Failed to add to reading list: ' + (err.message || 'Unknown error'));
     }
   };
 
@@ -176,8 +234,8 @@ const Home: React.FC = () => {
               </span>
               <div className="relative">
                 <h1 className="manga-title text-6xl md:text-8xl leading-tight transform -rotate-2">
-                  {heroTitle.split(' ')[0]}
-                  <span className="text-red-500"> {heroTitle.split(' ')[1]}</span>
+                  {heroTitleFirst}
+                  {heroTitleRest && <span className="text-red-500"> {heroTitleRest}</span>}
                 </h1>
                 <span className="impact-text absolute -top-8 right-0 transform rotate-12">
                   BOOM!
@@ -192,15 +250,31 @@ const Home: React.FC = () => {
             
             <div className="flex flex-wrap gap-4">
               <Link 
-                to={`/reader/${featuredData?.id || 'featured-001'}/chapter/${heroChapterCount}`}
-                className="manga-gradient manga-border px-8 py-4 font-semibold transition-all transform hover:scale-105 hover:-rotate-3 manga-title flex items-center gap-2"
+                to={featuredData?.id ? `/reader/${featuredData.id}/chapter/${heroChapterCount}` : '#'}
+                className={`manga-gradient manga-border px-8 py-4 font-semibold transition-all transform hover:scale-105 hover:-rotate-3 manga-title flex items-center gap-2 ${!featuredData?.id || loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                onClick={(e) => {
+                  if (!featuredData?.id) {
+                    e.preventDefault();
+                    window.alert('Featured manga is not available right now');
+                  } else {
+                    console.log(`Navigating to chapter ${heroChapterCount} of ${featuredData.title}`);
+                  }
+                }}
               >
                 <Flame className="w-6 h-6" />
                 Start Reading
               </Link>
               <button 
-                onClick={() => handleAddFavorite(featuredData?.id || 'featured-001')} 
-                className="bg-white/10 manga-border px-8 py-4 font-semibold transition-all transform hover:scale-105 hover:rotate-3 manga-title flex items-center gap-2"
+                onClick={() => {
+                  if (featuredData?.id) {
+                    handleAddReadingList(featuredData.id);
+                    console.log(`Adding ${featuredData.title} to reading list`);
+                  } else {
+                    window.alert('Featured manga is not available to add to your list');
+                  }
+                }} 
+                disabled={!featuredData?.id || loading}
+                className={`bg-white/10 manga-border px-8 py-4 font-semibold transition-all transform hover:scale-105 hover:rotate-3 manga-title flex items-center gap-2 ${!featuredData?.id || loading ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <Sparkles className="w-6 h-6" />
                 Add to List
@@ -214,12 +288,18 @@ const Home: React.FC = () => {
               </div>
               <div className="flex items-center gap-2">
                 <Clock className="w-5 h-5 text-gray-400" />
-                <span>{heroChapterCount} Chapters</span>
+                <span>{heroChapterCount} {heroChapterCount === 1 ? 'Chapter' : 'Chapters'}</span>
               </div>
               <div className="flex items-center gap-2">
                 <TrendingUp className="w-5 h-5 text-green-500" />
                 <span>Trending #{heroTrendingRank}</span>
               </div>
+              {loading && (
+                <div className="flex items-center gap-2 ml-auto">
+                  <div className="w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-sm">Loading...</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

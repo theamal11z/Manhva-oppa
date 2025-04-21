@@ -12,7 +12,7 @@ import {
   Clock,
   AlertCircle,
 } from 'lucide-react';
-import { getMangaList } from '../lib/supabaseClient';
+import { getMangaList, getGenres } from '../lib/supabaseClient';
 
 type FilterOptions = {
   genres: string[];
@@ -36,21 +36,40 @@ const Discover: React.FC = () => {
   });
   
   // Available filter options
-  const availableGenres = [
-    'Action', 'Adventure', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Mystery',
-    'Romance', 'Sci-Fi', 'Slice of Life', 'Supernatural', 'Thriller'
-  ];
-  
+  const [availableGenres, setAvailableGenres] = useState<string[]>([]);
   const availableTypes = ['manga', 'manhwa', 'manhua', 'webtoon'];
   const availableStatus = ['ongoing', 'completed', 'hiatus', 'cancelled'];
   
   useEffect(() => {
+    // Fetch genres from the database
+    const fetchGenres = async () => {
+      try {
+        const { data, error } = await getGenres();
+        if (error) throw error;
+        setAvailableGenres(data.map((g: any) => g.name));
+      } catch (err) {
+        setAvailableGenres([
+          'Action', 'Adventure', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Mystery',
+          'Romance', 'Sci-Fi', 'Slice of Life', 'Supernatural', 'Thriller'
+        ]);
+      }
+    };
+    fetchGenres();
+
     const fetchManga = async () => {
       try {
         setLoading(true);
-        
+        let orderBy: 'created_at' | 'popularity' = 'created_at';
+        let orderDirection: 'asc' | 'desc' = 'desc';
+        if (activeCategory === 'trending') {
+          orderBy = 'popularity';
+          orderDirection = 'desc';
+        } else if (activeCategory === 'new') {
+          orderBy = 'created_at';
+          orderDirection = 'desc';
+        }
         // In a real app, we would include filters in the API call
-        const response = await getMangaList(30, 0);
+        const response = await getMangaList(30, 0, orderBy, orderDirection);
         
         if (response.error) throw new Error(response.error.message);
         
@@ -59,34 +78,19 @@ const Discover: React.FC = () => {
           id: item.id,
           title: item.title,
           description: item.description,
-          coverImage: item.cover_image_url || `https://picsum.photos/seed/${item.id}/300/400`,
-          rating: item.popularity || Math.random() * 2 + 3, // Random rating between 3-5
-          genres: item.genres?.map((g: any) => g.genres?.name) || 
-            availableGenres.sort(() => 0.5 - Math.random()).slice(0, 3), // Random genres
-          type: item.type || availableTypes[Math.floor(Math.random() * availableTypes.length)],
-          status: item.status || availableStatus[Math.floor(Math.random() * availableStatus.length)],
+          coverImage: item.cover_image || `https://picsum.photos/seed/${item.id}/300/400`,
+          rating: item.rating || 0,
+          genres: (item.genres || []).map((g: any) => g.genres?.name).filter(Boolean),
+          type: item.type,
+          status: item.status,
           isNew: new Date(item.created_at).getTime() > Date.now() - 7 * 24 * 60 * 60 * 1000,
-          isTrending: Math.random() > 0.7, // 30% chance of being trending for demo
+          isTrending: item.popularity && item.popularity > 100, // Example: trending if popularity high
         }));
         
-        // If no data from API, generate dummy data
-        if (!formattedData || formattedData.length === 0) {
-          const dummyData = Array.from({ length: 30 }, (_, i) => ({
-            id: `manga-${i + 1}`,
-            title: `Manga Title ${i + 1}`,
-            description: `This is a description for Manga Title ${i + 1}. It's a fascinating story about adventure and friendship.`,
-            coverImage: `https://picsum.photos/seed/manga${i + 1}/300/400`,
-            rating: Math.random() * 2 + 3, // Random rating between 3-5
-            genres: availableGenres.sort(() => 0.5 - Math.random()).slice(0, 3), // Random genres
-            type: availableTypes[Math.floor(Math.random() * availableTypes.length)],
-            status: availableStatus[Math.floor(Math.random() * availableStatus.length)],
-            isNew: Math.random() > 0.8, // 20% chance of being new
-            isTrending: Math.random() > 0.7, // 30% chance of being trending
-          }));
-          
-          setMangaList(dummyData);
-        } else {
+        if (formattedData && formattedData.length > 0) {
           setMangaList(formattedData);
+        } else {
+          setMangaList([]);
         }
       } catch (err: any) {
         console.error('Error fetching manga:', err);

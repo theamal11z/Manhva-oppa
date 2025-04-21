@@ -13,7 +13,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
-import { supabase } from '../lib/supabaseClient';
+import { supabase, updateReadingStatus } from '../lib/supabaseClient';
 
 type PageImage = {
   id: string;
@@ -51,7 +51,10 @@ const PageImageViewer: React.FC<{ page: PageImage; darkMode: boolean }> = ({ pag
   );
 };
 
+import { useAuth } from '../lib/AuthContext';
+
 const Reader: React.FC = () => {
+  const { user } = useAuth();
   const { mangaId, chapterId } = useParams<{ mangaId: string; chapterId: string }>();
   const navigate = useNavigate();
   const [mangaTitle, setMangaTitle] = useState('Loading...');
@@ -66,6 +69,8 @@ const Reader: React.FC = () => {
   const [readingMode, setReadingMode] = useState<'single' | 'continuous' | 'webtoon'>('single');
   const [darkMode, setDarkMode] = useState(false);
   const [fullScreen, setFullScreen] = useState(false);
+  const [markingCompleted, setMarkingCompleted] = useState(false);
+  const [completedSuccess, setCompletedSuccess] = useState<string|null>(null);
   const touchStartX = useRef<number | null>(null);
   const [zoomStep, setZoomStep] = useState(0.2);
   const [pinchEnabled, setPinchEnabled] = useState(true);
@@ -73,6 +78,26 @@ const Reader: React.FC = () => {
   const [controlAutoHide, setControlAutoHide] = useState(true);
   const controlsTimerRef = useRef<number | null>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
+
+  // Helper to check if this is the last chapter (for demo, always true; you can enhance this logic)
+  const isLastChapter = () => {
+    // TODO: Implement actual logic to check if this is the last chapter
+    return true;
+  };
+
+  // Update reading status when chapter loads
+  useEffect(() => {
+    const updateStatus = async () => {
+      if (user && mangaId && chapterId) {
+        try {
+          await updateReadingStatus(user.id, mangaId, 'reading', Number(chapterId));
+        } catch (err) {
+          // Optionally, handle error
+        }
+      }
+    };
+    updateStatus();
+  }, [user, mangaId, chapterId]);
 
   // Load persisted reader settings
   useEffect(() => {
@@ -609,6 +634,33 @@ const Reader: React.FC = () => {
                     >
                       Reset
                     </button>
+                    {/* Mark as Completed button if on last page of last chapter */}
+                    {user && currentPage === pages.length && isLastChapter() && (
+                      <button
+                        className="manga-border px-4 py-2 bg-green-600 text-white hover:bg-green-700 transition-colors ml-4"
+                        disabled={markingCompleted}
+                        onClick={async () => {
+                          setMarkingCompleted(true);
+                          setCompletedSuccess(null);
+                          try {
+                            await updateReadingStatus(user.id, mangaId!, 'completed', Number(chapterId));
+                            setCompletedSuccess('Marked as completed!');
+                          } catch (err: any) {
+                            setCompletedSuccess('Failed to mark as completed');
+                          } finally {
+                            setMarkingCompleted(false);
+                            setTimeout(() => setCompletedSuccess(null), 2000);
+                          }
+                        }}
+                      >
+                        {markingCompleted ? 'Marking...' : 'Mark as Completed'}
+                      </button>
+                    )}
+                    {completedSuccess && (
+                      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-black/80 text-green-400 px-4 py-2 rounded-lg manga-shadow z-50">
+                        {completedSuccess}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -626,9 +678,10 @@ const Reader: React.FC = () => {
         </div>
       ) : (
         <div className="flex-1 overflow-auto p-4 flex flex-col" style={{ gap: `${readingMode === 'webtoon' ? 0 : pageSpacing}px` }}>
-          {pages.map(page => (
-            <PageImageViewer key={page.id} page={page} darkMode={darkMode} />
-          ))}
+          {pages.map(
+            page => (
+              <PageImageViewer key={page.id} page={page} darkMode={darkMode} />
+            ))}
         </div>
       )}
 

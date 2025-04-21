@@ -16,6 +16,7 @@ import {
   Tag,
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
+import { supabase } from '../lib/supabaseClient';
 
 type UserPreferences = {
   favoriteGenres: string[];
@@ -78,28 +79,35 @@ const Profile: React.FC = () => {
       try {
         setLoading(true);
         
-        // For demo purposes, we'll use placeholder data
-        // In a real app, this would be fetched from Supabase
-        setDisplayName(user.email?.split('@')[0] || 'User');
-        setBio('Manga enthusiast and avid reader who enjoys fantasy and action genres.');
-        setAvatar(`https://ui-avatars.com/api/?name=${user.email?.split('@')[0]}&background=random`);
-        
-        // Note: In a real app, we would fetch actual preferences from a database
-        // const { data, error } = await supabase
-        //   .from('user_preferences')
-        //   .select('*')
-        //   .eq('user_id', user.id)
-        //   .single();
-        // 
-        // if (error) throw error;
-        // if (data) {
-        //   setPreferences({
-        //     favoriteGenres: data.favorite_genres || [],
-        //     excludeGenres: data.exclude_genres || [],
-        //     darkMode: data.dark_mode || true,
-        //     readingDirection: data.reading_direction || 'rtl',
-        //   });
-        // }
+        // Fetch profile from user_profiles
+        const { data: profile, error: profileError } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+
+        if (profileError) throw profileError;
+        if (profile) {
+          setDisplayName(profile.full_name || profile.username || user.email?.split('@')[0] || 'User');
+          setBio(profile.bio || '');
+          setAvatar(profile.avatar_url || `https://ui-avatars.com/api/?name=${user.email?.split('@')[0]}&background=random`);
+        }
+
+        // Fetch preferences from user_preferences
+        const { data: pref, error: prefError } = await supabase
+          .from('user_preferences')
+          .select('*')
+          .eq('user_id', user.id)
+          .single();
+        if (prefError && prefError.code !== 'PGRST116') throw prefError; // ignore 'row not found' error
+        if (pref) {
+          setPreferences({
+            favoriteGenres: pref.favorite_genres || [],
+            excludeGenres: pref.exclude_genres || [],
+            darkMode: typeof pref.dark_mode === 'boolean' ? pref.dark_mode : true,
+            readingDirection: pref.reading_direction || 'rtl',
+          });
+        }
       } catch (err: any) {
         console.error('Error fetching profile:', err);
         setError(err.message || 'Failed to load profile');
@@ -125,21 +133,18 @@ const Profile: React.FC = () => {
     try {
       setLoading(true);
       
-      // In a real app, we would update the profile in Supabase
-      // const { error } = await supabase
-      //   .from('profiles')
-      //   .upsert({
-      //     id: user?.id,
-      //     display_name: displayName,
-      //     bio,
-      //     avatar_url: avatar,
-      //     updated_at: new Date().toISOString(),
-      //   });
-      // 
-      // if (error) throw error;
+      const { error } = await supabase
+        .from('user_profiles')
+        .upsert({
+          id: user?.id,
+          username: user?.email?.split('@')[0] || '',
+          full_name: displayName,
+          bio,
+          avatar_url: avatar,
+          updated_at: new Date().toISOString(),
+        });
       
-      // Just simulate a delay for the demo
-      await new Promise(resolve => setTimeout(resolve, 500));
+      if (error) throw error;
       
       setSuccess('Profile updated successfully!');
       setIsEditing(false);
@@ -158,22 +163,18 @@ const Profile: React.FC = () => {
     try {
       setLoading(true);
       
-      // In a real app, we would update preferences in Supabase
-      // const { error } = await supabase
-      //   .from('user_preferences')
-      //   .upsert({
-      //     user_id: user?.id,
-      //     favorite_genres: preferences.favoriteGenres,
-      //     exclude_genres: preferences.excludeGenres,
-      //     dark_mode: preferences.darkMode,
-      //     reading_direction: preferences.readingDirection,
-      //     updated_at: new Date().toISOString(),
-      //   });
-      // 
-      // if (error) throw error;
+      const { error } = await supabase
+        .from('user_preferences')
+        .upsert({
+          user_id: user?.id,
+          favorite_genres: preferences.favoriteGenres,
+          exclude_genres: preferences.excludeGenres,
+          dark_mode: preferences.darkMode,
+          reading_direction: preferences.readingDirection,
+          updated_at: new Date().toISOString(),
+        });
       
-      // Just simulate a delay for the demo
-      await new Promise(resolve => setTimeout(resolve, 500));
+      if (error) throw error;
       
       setSuccess('Preferences saved successfully!');
       
