@@ -310,9 +310,11 @@ const Admin: React.FC = () => {
             
             {activeView === 'settings' && (
   <div className="p-4">
-    <div className="manga-panel p-6 bg-black/90">
+    <div className="manga-panel p-6 bg-black/30 relative z-0">
       <h2 className="text-2xl font-bold manga-title mb-6">Admin Settings</h2>
-      <AdminSettings />
+      <div className="relative z-10">
+        <AdminSettings />
+      </div>
     </div>
   </div>
 )}

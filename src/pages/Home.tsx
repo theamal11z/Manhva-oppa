@@ -11,23 +11,60 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { getRecommendations, addToReadingList } from '../lib/supabaseClient';
+import { addToReadingList } from '../lib/supabaseClient';
+import { getSettings } from '../lib/settingsApi';
+import SiteAnnouncement from '../components/SiteAnnouncement';
+// New imports for data persistence
+import useMangaList from '../hooks/useMangaList';
+import useFeaturedManga from '../hooks/useFeaturedManga';
+import AppStorage from '../lib/AppStorage';
 
 const Home: React.FC = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'trending'|'new'|'recommended'|'search'>('trending');
-  const [mangaList, setMangaList] = useState<any[]>([]);
   const [page, setPage] = useState(0);
   const limit = 12;
   const [hasMore, setHasMore] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [siteAnnouncement, setSiteAnnouncement] = useState<string | null>(null);
 
-  // Dynamic featured manga for hero section
-  type FeaturedData = { id: string; title: string; description: string; popularity: number; cover_image_url?: string; cover_image?: string; image_url?: string; };
-  const [featuredData, setFeaturedData] = useState<FeaturedData | null>(null);
-  const [featuredChapterNumber, setFeaturedChapterNumber] = useState<number>(1);
+  // Use the custom hook for featured manga
+  const { 
+    data: featuredData,
+    isLoading: featuredLoading
+  } = useFeaturedManga();
+
+  // Use the custom hook for manga lists with persistent caching
+  const {
+    data: mangaList = [],
+    isLoading: mangaLoading,
+    isError: mangaError,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage
+  } = useMangaList({
+    category: activeTab, 
+    limit,
+    offset: page * limit,
+    searchTerm,
+  });
+
+  // Set loading state based on the queries
+  useEffect(() => {
+    setLoading(featuredLoading || mangaLoading);
+  }, [featuredLoading, mangaLoading]);
+  
+  // Set error state based on the queries
+  useEffect(() => {
+    setError(mangaError ? "Failed to load manga data" : null);
+  }, [mangaError]);
+  
+  // Update has more based on the query response
+  useEffect(() => {
+    setHasMore(!!hasNextPage);
+  }, [hasNextPage]);
 
   // Resolve Supabase storage path to public URL
   const resolvePublicUrl = (path: string) => {
@@ -35,56 +72,17 @@ const Home: React.FC = () => {
     return data.publicUrl;
   };
 
-  // Load featured manga with enhanced data fetching
+  // Load site announcement from settings
   useEffect(() => {
-    const loadFeatured = async () => {
-      try {
-        setLoading(true);
-        // Get most popular manga for featured section
-        const { data, error } = await supabase
-          .from('manga_entries')
-          .select('id, title, description, popularity, cover_image')
-          .order('popularity', { ascending: false })
-          .limit(1)
-          .single();
-          
-        if (error) throw error;
-        if (data) {
-          console.log('Featured manga loaded:', data.title);
-          setFeaturedData(data);
-          
-          // Get first chapter for the Start Reading button
-          const { data: chapters, error: chapErr } = await supabase
-            .from('chapters')
-            .select('id, chapter_number')
-            .eq('manga_id', data.id)
-            .order('chapter_number', { ascending: true })
-            .limit(1);
-              
-          if (chapErr) throw chapErr;
-          if (chapters && chapters.length > 0) {
-            setFeaturedChapterNumber(chapters[0].chapter_number);
-            console.log(`First chapter found: Chapter ${chapters[0].chapter_number}`);
-          } else {
-            console.log('No chapters found for this manga');
-          }
-        }
-      } catch (err: any) {
-        console.error('Error loading featured manga:', err);
-        setError(err.message || 'Failed to load featured manga');
-      } finally {
-        setLoading(false);
+    getSettings().then(settings => {
+      if (settings.announcement) {
+        setSiteAnnouncement(settings.announcement);
       }
-    };
-    
-    loadFeatured();
+    });
   }, []);
 
   // Derived hero values with better fallbacks and processing
-  const heroImage = featuredData ? (() => {
-    const raw = featuredData.cover_image || '';
-    return raw.startsWith('http') ? raw : (raw ? resolvePublicUrl(raw) : '');
-  })() : 'https://images.unsplash.com/photo-1612036782180-6f0b6cd846fe?auto=format&fit=crop&q=80';
+  const heroImage = featuredData ? featuredData.imageUrl : 'https://images.unsplash.com/photo-1612036782180-6f0b6cd846fe?auto=format&fit=crop&q=80';
   
   // Process title for display - split for styling if it has multiple words
   const heroTitle = featuredData?.title || 'Spirit Hunter';
@@ -94,78 +92,21 @@ const Home: React.FC = () => {
   
   const heroDescription = featuredData?.description || 'Follow the journey of a young exorcist as she battles supernatural forces in modern-day Tokyo. A thrilling tale of action, mystery, and redemption.';
   const heroRating = featuredData?.popularity ? Number(featuredData.popularity).toFixed(1) : '4.8';
-  const heroChapterCount = featuredChapterNumber || 1;
+  const heroChapterCount = featuredData?.firstChapter || 1;
   const heroTrendingRank = 1;
 
   // Reset pagination and list on tab or search change
   useEffect(() => {
     setPage(0);
-    setMangaList([]);
-    setHasMore(true);
   }, [activeTab, searchTerm]);
 
-  useEffect(() => {
-    const fetchManga = async () => {
-      try {
-        setLoading(true);
-        let response: any;
-        const offset = page * limit;
-        if (activeTab === 'trending') {
-          response = await supabase
-            .from('manga_entries')
-            .select(`*, genres:manga_genres(genres(*)), tags:manga_tags(tags(*))`)
-            .order('popularity', { ascending: false })
-            .range(offset, offset + limit - 1);
-        } else if (activeTab === 'new') {
-          response = await supabase
-            .from('manga_entries')
-            .select(`*, genres:manga_genres(genres(*)), tags:manga_tags(tags(*))`)
-            .order('created_at', { ascending: false })
-            .range(offset, offset + limit - 1);
-        } else if (activeTab === 'recommended') {
-          response = await getRecommendations(limit);
-        } else if (activeTab === 'search') {
-          response = await supabase
-            .from('manga_entries')
-            .select(`*, genres:manga_genres(genres(*)), tags:manga_tags(tags(*))`)
-            .ilike('title', `%${searchTerm}%`)
-            .order('created_at', { ascending: false })
-            .range(offset, offset + limit - 1);
-        } else {
-          response = await supabase
-            .from('manga_entries')
-            .select(`*, genres:manga_genres(genres(*)), tags:manga_tags(tags(*))`)
-            .range(offset, offset + limit - 1);
-        }
-        if (response.error) throw new Error(response.error.message);
-
-        // Map to UI format
-        const items = (response.data || []).map((item: any) => {
-          const raw = item.cover_image || '';
-          const imageUrl = raw
-            ? (raw.startsWith('http') ? raw : resolvePublicUrl(raw))
-            : `https://picsum.photos/seed/${item.id}/300/400`;
-          return {
-            id: item.id,
-            title: item.title,
-            rating: item.popularity,
-            genres: item.genres?.map((g: any) => g.genres.name) || [],
-            image: imageUrl,
-            createdAt: item.created_at,
-          };
-        });
-        setHasMore(items.length === limit);
-        setMangaList(prev => page === 0 ? items : [...prev, ...items]);
-      } catch (err: any) {
-        console.error('Error fetching manga:', err);
-        setError(err.message || 'Failed to fetch manga');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchManga();
-  }, [activeTab, page, searchTerm]);
+  // Load more function
+  const loadMore = () => {
+    if (!isFetchingNextPage && hasNextPage) {
+      setPage(prev => prev + 1);
+      fetchNextPage();
+    }
+  };
 
   const handleAddFavorite = async (mangaId: string) => {
     if (!user) {
@@ -182,21 +123,15 @@ const Home: React.FC = () => {
         .eq('manga_id', mangaId)
         .single();
         
-      if (data) {
-        window.alert('This manga is already in your favorites!');
-        return;
+      if (error || !data) {
+        // Not in favorites, add it
+        await addToReadingList(user.id, mangaId, 'reading');
+        window.alert('Added to your reading list!');
+      } else {
+        window.alert('Already in your favorites!');
       }
-      
-      // Add to favorites if not already there
-      const { error: insertError } = await supabase
-        .from('user_favorites')
-        .insert({ user_id: user.id, manga_id: mangaId });
-        
-      if (insertError) throw insertError;
-      window.alert('Added to favorites!');
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error adding to favorites:', err);
-      window.alert('Failed to add to favorites: ' + (err.message || 'Unknown error'));
     }
   };
 
@@ -214,6 +149,28 @@ const Home: React.FC = () => {
       window.alert('Failed to add to reading list: ' + (err.message || 'Unknown error'));
     }
   };
+
+  // Site title and description from settings
+  useEffect(() => {
+    getSettings().then(settings => {
+      if (settings.siteTitle) {
+        document.title = settings.siteTitle;
+      } else {
+        document.title = 'MangaVerse';
+      }
+      if (settings.siteDescription) {
+        const descTag = document.querySelector('meta[name="description"]');
+        if (descTag) {
+          descTag.setAttribute('content', settings.siteDescription);
+        } else {
+          const meta = document.createElement('meta');
+          meta.name = 'description';
+          meta.content = settings.siteDescription;
+          document.head.appendChild(meta);
+        }
+      }
+    });
+  }, []);
 
   return (
     <main className="pt-16">
@@ -304,7 +261,8 @@ const Home: React.FC = () => {
           </div>
         </div>
       </section>
-
+      {/* Announcement Banner - Place it below hero and above search bar */}
+      <SiteAnnouncement />
       {/* Search Section */}
       <section className="py-12 bg-black/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -418,7 +376,7 @@ const Home: React.FC = () => {
 
           {!loading && !error && mangaList.length > 0 && hasMore && activeTab !== 'recommended' && activeTab !== 'search' && (
             <div className="flex justify-center mt-10">
-              <button onClick={() => setPage(prev => prev + 1)} className="manga-gradient manga-border px-8 py-3 font-semibold transition-all transform hover:scale-105 hover:rotate-2 manga-title">
+              <button onClick={loadMore} className="manga-gradient manga-border px-8 py-3 font-semibold transition-all transform hover:scale-105 hover:rotate-2 manga-title">
                 Load More
               </button>
             </div>

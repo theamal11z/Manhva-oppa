@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { supabase, updateReadingStatus } from '../lib/supabaseClient';
+import AppStorage from '../lib/AppStorage';
 
 type PageImage = {
   id: string;
@@ -167,6 +168,32 @@ const Reader: React.FC = () => {
   const chapter = parseInt(chapterId || '1', 10);
 
   useEffect(() => {
+    if (mangaId && chapterId) {
+      // Try to load page from localStorage
+      const savedPage = AppStorage.getReadingProgress(mangaId, chapterId);
+      if (savedPage && typeof savedPage === 'number' && savedPage > 0) {
+        console.log(`Restored reading position: page ${savedPage}`);
+        setCurrentPage(savedPage);
+      }
+      
+      // Try to load manga data from storage
+      const savedMangaData = AppStorage.getMangaData(mangaId);
+      if (savedMangaData) {
+        console.log('Using cached manga data');
+        setMangaTitle(savedMangaData.title || 'Unknown Manga');
+      }
+      
+      // Try to load chapter data from storage
+      const savedChapterData = AppStorage.getChapterData(mangaId, chapterId);
+      if (savedChapterData && savedChapterData.pages && savedChapterData.pages.length > 0) {
+        console.log('Using cached chapter pages');
+        setPages(savedChapterData.pages);
+        setLoading(false);
+      }
+    }
+  }, [mangaId, chapterId]);
+
+  useEffect(() => {
     const fetchMangaData = async () => {
       try {
         setLoading(true);
@@ -188,7 +215,12 @@ const Reader: React.FC = () => {
           .single();
 
         if (mangaError) throw new Error(mangaError.message);
-        if (mangaData) setMangaTitle(mangaData.title);
+        if (mangaData) {
+          setMangaTitle(mangaData.title);
+          
+          // Save manga data to storage
+          AppStorage.saveMangaData(mangaId, mangaData);
+        }
 
         // Get chapter data
         const { data: chapterData, error: chapterError } = await supabase
@@ -259,7 +291,14 @@ const Reader: React.FC = () => {
             url: page.image_url,
             number: page.page_number
           }));
+          
           setPages(formattedPages);
+          
+          // Cache the chapter's pages
+          AppStorage.saveChapterData(mangaId, chapterId, {
+            pages: formattedPages,
+            title: chapterTitle
+          });
         } else {
           // If no pages found, show a placeholder
           const demoPages = Array.from({ length: 10 }, (_, i) => ({
@@ -277,8 +316,9 @@ const Reader: React.FC = () => {
         setLoading(false);
       }
     };
+    
     fetchMangaData();
-  }, [mangaId, chapter, navigate, chapterId]);
+  }, [mangaId, chapterId, navigate]);
 
   // Handle keyboard navigation
   useEffect(() => {
@@ -453,6 +493,54 @@ const Reader: React.FC = () => {
   const handleTouchMove = () => {
     if (controlAutoHide) setShowControls(false);
   };
+
+  // Update reading progress on page change
+  useEffect(() => {
+    if (mangaId && chapterId && pages.length > 0 && !loading) {
+      // Save to localStorage via AppStorage
+      AppStorage.saveReadingProgress(mangaId, chapterId, currentPage);
+      
+      // If logged in, update server state too
+      if (user) {
+        const updateProgress = async () => {
+          try {
+            await updateReadingStatus(user.id, mangaId, 'reading', Number(chapterId));
+            console.log(`Updated reading progress: ${currentPage}/${pages.length}`);
+          } catch (err) {
+            console.error('Error updating reading progress:', err);
+          }
+        };
+        updateProgress();
+      }
+    }
+  }, [mangaId, chapterId, currentPage, pages.length, loading]);
+
+  // Load saved reading progress and manga/chapter data
+  useEffect(() => {
+    if (mangaId && chapterId) {
+      // Try to load page from localStorage
+      const savedPage = AppStorage.getReadingProgress(mangaId, chapterId);
+      if (savedPage && typeof savedPage === 'number' && savedPage > 0) {
+        console.log(`Restored reading position: page ${savedPage}`);
+        setCurrentPage(savedPage);
+      }
+      
+      // Try to load manga data from storage
+      const savedMangaData = AppStorage.getMangaData(mangaId);
+      if (savedMangaData) {
+        console.log('Using cached manga data');
+        setMangaTitle(savedMangaData.title || 'Unknown Manga');
+      }
+      
+      // Try to load chapter data from storage
+      const savedChapterData = AppStorage.getChapterData(mangaId, chapterId);
+      if (savedChapterData && savedChapterData.pages && savedChapterData.pages.length > 0) {
+        console.log('Using cached chapter pages');
+        setPages(savedChapterData.pages);
+        setLoading(false);
+      }
+    }
+  }, [mangaId, chapterId]);
 
   if (loading) {
     return (

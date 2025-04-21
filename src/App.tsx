@@ -5,14 +5,15 @@ import {
   Heart,
   Library,
   Menu,
-  Search,
-  User,
   Filter,
   X,
   LogOut,
   AlertCircle,
+  User,
 } from 'lucide-react';
 import { useAuth } from './lib/AuthContext';
+import { getSettings } from './lib/settingsApi';
+import queryClient from './lib/QueryClient';
 
 // Import pages
 import Home from './pages/Home';
@@ -32,6 +33,16 @@ function App() {
   const [showFilters, setShowFilters] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
+
+  // Site title for navbar branding
+  const [siteTitle, setSiteTitle] = useState('MangaVerse');
+  useEffect(() => {
+    getSettings().then(settings => {
+      if (settings.siteTitle && typeof settings.siteTitle === 'string') {
+        setSiteTitle(settings.siteTitle);
+      }
+    });
+  }, []);
 
   // Handle scroll for navbar transparency
   useEffect(() => {
@@ -173,7 +184,7 @@ function App() {
           <div className="flex items-center justify-between h-16">
             <Link to="/" className="flex items-center manga-border bg-red-500 px-4 py-2 transform -rotate-2">
               <BookOpen className="w-8 h-8 text-white" />
-              <span className="ml-2 text-xl manga-title">MangaVerse</span>
+              <span className="ml-2 text-xl manga-title">{siteTitle}</span>
             </Link>
             
             <div className="hidden md:flex items-center space-x-8">

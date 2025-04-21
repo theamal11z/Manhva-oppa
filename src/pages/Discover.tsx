@@ -13,6 +13,8 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { getMangaList, getGenres } from '../lib/supabaseClient';
+import AppStorage from '../lib/AppStorage';
+import { useQuery } from '@tanstack/react-query';
 
 // Define proper interfaces for better type safety
 interface MangaItem {
@@ -43,53 +45,68 @@ const Discover: React.FC = () => {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [mangaList, setMangaList] = useState<MangaItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<'all' | 'trending' | 'new'>('all');
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     genres: [],
     types: [],
     status: [],
-    minRating: 0,
+    minRating: 0
+  });
+  const [availableGenres, setAvailableGenres] = useState<string[]>([]);
+  
+  // React Query for genres - with storage caching
+  const { data: genresData } = useQuery({
+    queryKey: ['genres'],
+    queryFn: async () => {
+      // Check cache first
+      const cachedGenres = AppStorage.getFilteredManga('genres');
+      if (cachedGenres) {
+        return cachedGenres;
+      }
+      
+      const { data, error } = await getGenres();
+      if (error) {
+        throw new Error(error.message);
+      }
+      
+      const genres = data?.map(genre => genre.name) || [];
+      
+      // Cache for future use
+      AppStorage.saveFilteredManga('genres', genres);
+      
+      return genres;
+    },
+    staleTime: 1000 * 60 * 60, // 1 hour
   });
   
-  // Simplified state without pagination for better performance
-  
-  // Available filter options
-  const [availableGenres, setAvailableGenres] = useState<string[]>([]);
-  const availableTypes = ['manga', 'manhwa', 'manhua', 'webtoon'];
-  const availableStatus = ['ongoing', 'completed', 'hiatus', 'cancelled'];
-  
-  // Debounce search term to prevent excessive filtering
+  // Set available genres from query data
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [searchTerm]);
-
-  // Fetch genres from the database
-  useEffect(() => {
-    const fetchGenres = async () => {
-      try {
-        const { data, error } = await getGenres();
-        if (error) throw error;
-        setAvailableGenres(data.map((g: {name: string}) => g.name));
-      } catch (err) {
-        setAvailableGenres([
-          'Action', 'Adventure', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Mystery',
-          'Romance', 'Sci-Fi', 'Slice of Life', 'Supernatural', 'Thriller'
-        ]);
+    if (genresData && genresData.length > 0) {
+      setAvailableGenres(genresData);
+    } else {
+      // Fallback if no genres data yet
+      setAvailableGenres([
+        'Action', 'Adventure', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Mystery',
+        'Romance', 'Sci-Fi', 'Slice of Life', 'Supernatural', 'Thriller'
+      ]);
+    }
+  }, [genresData]);
+  
+  // React Query for manga data - with storage caching
+  const { data: mangaData, isLoading: mangaLoading, isError: mangaError } = useQuery({
+    queryKey: ['discoverManga', activeCategory, debouncedSearchTerm, filterOptions],
+    queryFn: async () => {
+      // Generate a cache key based on active filters
+      const cacheKey = `discover-${activeCategory}-${debouncedSearchTerm}-${JSON.stringify(filterOptions)}`;
+      
+      // Check cache first
+      const cachedData = AppStorage.getFilteredManga(cacheKey);
+      if (cachedData) {
+        return cachedData;
       }
-    };
-    fetchGenres();
-  }, []);
-
-  // Simplified fetch manga function to avoid performance issues
-  const fetchManga = useCallback(async () => {
-    try {
-      setLoading(true);
+      
       let orderBy: 'created_at' | 'popularity' = 'created_at';
       let orderDirection: 'asc' | 'desc' = 'desc';
       
@@ -102,7 +119,6 @@ const Discover: React.FC = () => {
       }
       
       // Use a fixed value for now to prevent performance issues
-      // We'll load 30 items at once without pagination
       const response = await getMangaList(30, 0, orderBy, orderDirection);
       
       if (response.error) throw new Error(response.error.message);
@@ -119,22 +135,34 @@ const Discover: React.FC = () => {
         status: item.status,
         isNew: new Date(item.created_at).getTime() > Date.now() - 7 * 24 * 60 * 60 * 1000,
         isTrending: item.popularity && item.popularity > 100, // Example: trending if popularity high
-      }));
+      })) || [];
       
-      if (formattedData && formattedData.length > 0) {
-        setMangaList(formattedData);
-      } else {
-        setMangaList([]);
-      }
-      // No pagination needed for better performance
-    } catch (err: any) {
-      console.error('Error fetching manga:', err);
-      setError(err.message || 'Failed to fetch manga');
-    } finally {
-      setLoading(false);
-    }
-  }, [activeCategory]);
+      // Cache the results
+      AppStorage.saveFilteredManga(cacheKey, formattedData);
+      
+      return formattedData;
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
   
+  // Update manga list from query data
+  useEffect(() => {
+    if (mangaData) {
+      setMangaList(mangaData);
+    }
+    setLoading(mangaLoading);
+    setError(mangaError ? "Failed to load manga data" : null);
+  }, [mangaData, mangaLoading, mangaError]);
+  
+  // Debounce search term to prevent excessive filtering
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
   // Apply filters and search with memoization for performance
   const filteredManga = useMemo(() => {
     return mangaList.filter(manga => {
@@ -218,18 +246,6 @@ const Discover: React.FC = () => {
       minRating: 0,
     });
     setSearchTerm('');
-    fetchManga(); // Reload with cleared filters
-  };
-  
-  // Add effect to load data on category changes
-  useEffect(() => {
-    fetchManga();
-  }, [activeCategory, fetchManga]);
-  
-  // Simple placeholder function for the Load More button
-  const loadMore = () => {
-    // Implement pagination later when performance is optimized
-    console.log('Load more functionality temporarily disabled for performance');
   };
   
   return (
@@ -332,7 +348,7 @@ const Discover: React.FC = () => {
               <div>
                 <h4 className="text-lg mb-2 manga-title transform -rotate-1">Type</h4>
                 <div className="flex flex-wrap gap-2 mb-4">
-                  {availableTypes.map((type, idx) => (
+                  {['manga', 'manhwa', 'manhua', 'webtoon'].map((type, idx) => (
                     <button
                       key={type}
                       onClick={() => toggleTypeFilter(type)}
@@ -353,7 +369,7 @@ const Discover: React.FC = () => {
                 
                 <h4 className="text-lg mb-2 manga-title transform -rotate-1">Status</h4>
                 <div className="flex flex-wrap gap-2">
-                  {availableStatus.map((status, idx) => (
+                  {['ongoing', 'completed', 'hiatus', 'cancelled'].map((status, idx) => (
                     <button
                       key={status}
                       onClick={() => toggleStatusFilter(status)}
@@ -387,7 +403,7 @@ const Discover: React.FC = () => {
                     className="w-full accent-red-500"
                   />
                   <div className="flex items-center whitespace-nowrap">
-                    <Star className="inline-block w-4 h-4 text-yellow-500 mr-1" />
+                    <Star className="w-4 h-4 text-yellow-500" />
                     <span>{filterOptions.minRating.toFixed(1)}+</span>
                   </div>
                 </div>
@@ -492,7 +508,7 @@ const Discover: React.FC = () => {
         {!loading && !error && filteredManga.length > 0 && false && (
           <div className="flex justify-center mt-10">
             <button 
-              onClick={loadMore}
+              onClick={() => {}}
               disabled={loading}
               className="manga-gradient manga-border px-8 py-3 font-semibold transition-all transform hover:scale-105 hover:rotate-2 manga-title">
               {loading ? 'Loading...' : 'Load More'}
