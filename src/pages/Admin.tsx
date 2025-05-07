@@ -10,7 +10,9 @@ import {
   Menu,
   X,
   LogOut,
-  FileText
+  FileText,
+  
+  Edit3
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import Dashboard from '../components/admin/Dashboard';
@@ -18,6 +20,7 @@ import MangaManager from '../components/admin/MangaManager';
 import UserManager from '../components/admin/UserManager';
 import ChapterManager from '../components/admin/ChapterManager';
 import AdminSettings from '../components/admin/AdminSettings';
+import BlogManager from '../components/admin/BlogManager';
 
 const Admin: React.FC = () => {
   const { user, isAdmin, loading: authLoading, signOut } = useAuth();
@@ -29,13 +32,13 @@ const Admin: React.FC = () => {
   // Parse view from URL hash or default to dashboard
   const getViewFromHash = () => {
     const hash = location.hash.replace('#', '');
-    if (['dashboard', 'manga', 'chapters', 'users', 'settings'].includes(hash)) {
-      return hash as 'dashboard' | 'manga' | 'chapters' | 'users' | 'settings';
+    if (['dashboard', 'manga', 'chapters', 'users', 'blog', 'settings'].includes(hash)) {
+      return hash as 'dashboard' | 'manga' | 'chapters' | 'users' | 'blog' | 'settings';
     }
     return 'dashboard';
   };
   
-  const [activeView, setActiveView] = useState<'dashboard' | 'manga' | 'chapters' | 'users' | 'settings'>(getViewFromHash());
+  const [activeView, setActiveView] = useState<'dashboard' | 'manga' | 'chapters' | 'users' | 'blog' | 'settings'>(getViewFromHash());
   const [mainContentHeight, setMainContentHeight] = useState<string>('auto');
   
   // Update activeView when hash changes
@@ -79,7 +82,7 @@ const Admin: React.FC = () => {
   }, []);
   
   // Handle tab navigation
-  const handleTabChange = (view: 'dashboard' | 'manga' | 'chapters' | 'users' | 'settings') => {
+  const handleTabChange = (view: 'dashboard' | 'manga' | 'chapters' | 'users' | 'blog' | 'settings') => {
     if (activeView !== view) {
       // Reset scroll position
       if (mainContentRef.current) {
@@ -201,7 +204,19 @@ const Admin: React.FC = () => {
                 }`}
               >
                 <BookOpen className="w-5 h-5 mr-3" />
-                <span className="manga-title">Manga Library</span>
+                <span className="manga-title">Manga</span>
+              </button>
+              
+              <button
+                onClick={() => handleTabChange('blog')}
+                className={`w-full flex items-center px-4 py-3 rounded-md transition-colors ${
+                  activeView === 'blog'
+                    ? 'bg-red-500/20 text-red-500'
+                    : 'hover:bg-black/40 text-gray-400 hover:text-white'
+                }`}
+              >
+                <Edit3 className="w-5 h-5 mr-3" />
+                <span className="manga-title">Blog</span>
               </button>
               
               <button
@@ -281,6 +296,7 @@ const Admin: React.FC = () => {
               {activeView === 'manga' && 'Manga Library'}
               {activeView === 'chapters' && 'Chapter Manager'}
               {activeView === 'users' && 'User Management'}
+              {activeView === 'blog' && 'Blog Management'}
               {activeView === 'settings' && 'Admin Settings'}
             </h2>
           </div>
@@ -307,6 +323,7 @@ const Admin: React.FC = () => {
             {activeView === 'manga' && <MangaManager />}
             {activeView === 'chapters' && <ChapterManager />}
             {activeView === 'users' && <UserManager />}
+            {activeView === 'blog' && <BlogManager />}
             
             {activeView === 'settings' && (
   <div className="p-4">

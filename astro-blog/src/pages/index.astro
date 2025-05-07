@@ -1,0 +1,143 @@
+---
+import BaseHead from '../components/BaseHead.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import { SITE_TITLE, SITE_DESCRIPTION, getTitle, getDescription } from '../consts';
+import FormattedDate from '../components/FormattedDate.astro';
+import { getAllBlogPosts, getLatestBlogPosts } from '../lib/blogDataService.js';
+
+// Get dynamic site info
+const dynamicTitle = await getTitle();
+const dynamicDescription = await getDescription();
+
+// Fetch recent blog posts from Supabase
+const { posts: featuredPosts, count } = await getAllBlogPosts({ limit: 3 });
+
+// Sort by published date (newest first)
+featuredPosts.sort((a, b) => new Date(b.published_date) - new Date(a.published_date));
+
+// Get total post count for display
+const { count: totalPostCount } = await getAllBlogPosts({ limit: 1 });
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<BaseHead title={dynamicTitle} description={dynamicDescription} />
+	</head>
+	<body>
+		<Header />
+		
+		<!-- Hero Section -->
+		<section class="pt-32 pb-16 relative">
+			<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+				<div class="manga-panel bg-gray-800/50 p-8 md:p-12 relative overflow-hidden">
+					<div class="absolute inset-0 screen-tone pointer-events-none"></div>
+					<div class="relative z-10">
+						<h1 class="manga-title text-4xl md:text-6xl mb-4 transform -rotate-2">
+							{dynamicTitle}
+						</h1>
+						<p class="text-xl mb-8 max-w-2xl">
+							{dynamicDescription}
+						</p>
+						<div class="flex flex-wrap gap-4">
+							<a href="/blog" class="manga-border bg-red-500 px-6 py-3 inline-block transform hover:rotate-2 transition-transform">
+								Read Latest Posts
+							</a>
+							<a href="/blog/search" class="manga-border bg-gray-700 px-6 py-3 inline-block transform hover:-rotate-2 transition-transform">
+								Search Blog
+							</a>
+						</div>
+					</div>
+					<div class="impact-text text-5xl md:text-7xl right-10 bottom-10 opacity-50 hidden md:block">
+						Manhva-Oppa!
+					</div>
+				</div>
+			</div>
+		</section>
+		
+		<!-- Featured Posts -->
+		<section class="py-16">
+			<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+				<h2 class="manga-title text-3xl mb-8 transform rotate-1">Latest Posts</h2>
+				
+				{featuredPosts.length === 0 ? (
+					<div class="manga-panel p-8 text-center">
+						<p class="text-xl">No blog posts found</p>
+						<p class="mt-4 text-gray-400">Check back soon for new content!</p>
+					</div>
+				) : (
+					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+						{featuredPosts.map((post) => (
+							<a href={`/blog/${post.slug}/`} class="manga-card group">
+								<div class="manga-panel bg-gray-800 h-full">
+									<div class="relative">
+										<div class="h-48 overflow-hidden">
+											<img 
+												src={post.featured_image || post.manga?.cover_image || '/blog-placeholder-1.jpg'} 
+												alt={post.title} 
+												class="w-full h-full object-cover transition-transform group-hover:scale-105"
+											/>
+										</div>
+										<div class="p-6">
+											<h3 class="manga-title text-xl mb-2 group-hover:text-red-500 transition-colors">
+												{post.title}
+											</h3>
+											<div class="text-gray-400 text-sm mb-4">
+												<FormattedDate date={new Date(post.published_date)} />
+												{post.views > 0 && (
+													<span class="ml-2 text-xs">
+														• {post.views} views
+													</span>
+												)}
+												{post.manga && (
+													<span class="block mt-1 manga-border px-2 py-0.5 text-xs inline-block">
+														{post.manga.title}
+													</span>
+												)}
+											</div>
+											<p class="text-gray-300 line-clamp-3">
+												{post.seo_description}
+											</p>
+										</div>
+									</div>
+								</div>
+							</a>
+						))}
+					</div>
+				)}
+				
+				<div class="text-center mt-12">
+					<p class="text-gray-400 mb-4">Showing {featuredPosts.length} of {totalPostCount} total posts</p>
+					<div class="flex flex-wrap gap-4 justify-center">
+						<a href="/blog" class="manga-border px-6 py-3 inline-block transform hover:-rotate-2 transition-transform">
+							Browse All Posts
+						</a>
+						<a href="/blog/archive" class="manga-border px-6 py-3 inline-block transform hover:rotate-2 transition-transform bg-gray-700">
+							View Archive
+						</a>
+					</div>
+				</div>
+			</div>
+		</section>
+		
+		<!-- CTA Section -->
+		<section class="py-16 relative">
+			<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+				<div class="manga-gradient manga-panel p-8 md:p-12 flex flex-col md:flex-row items-center justify-between">
+					<div class="mb-6 md:mb-0">
+						<h2 class="manga-title text-3xl mb-4">Discover More Manga</h2>
+						<p class="text-xl max-w-xl">
+							Head over to the main site to explore our collection of manga and manhwa titles!
+						</p>
+					</div>
+					<a href="/../../" class="manga-border bg-white text-red-500 px-6 py-3 inline-block transform hover:rotate-2 transition-transform">
+						Visit Main Site
+					</a>
+				</div>
+			</div>
+		</section>
+		
+		<Footer />
+	</body>
+</html>

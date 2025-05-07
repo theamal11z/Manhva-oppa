@@ -1,0 +1,11 @@
+# Allow all web crawlers
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://blog.manhva-oppa.com/sitemap-index.xml
+
+# Prevent crawling of admin pages if they exist
+User-agent: *
+Disallow: /admin/
+Disallow: /dashboard/
