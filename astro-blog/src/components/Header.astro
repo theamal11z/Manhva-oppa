@@ -37,9 +37,12 @@ const dynamicTitle = await getTitle();
 			
 			<button
 				id="menu-toggle"
-				class="md:hidden manga-border p-1.5 sm:p-2 transform hover:rotate-3 transition-transform menu-button focus:outline-none"
-				aria-label="Toggle Menu"
+				class="md:hidden manga-border p-3 sm:p-4 transform hover:rotate-3 transition-transform menu-button focus:outline-none"
+				aria-label="Open navigation menu"
+				aria-controls="mobile-menu"
+				aria-expanded="false"
 			>
+
 				<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
 				</svg>
@@ -47,8 +50,8 @@ const dynamicTitle = await getTitle();
 		</nav>
 	</div>
 	
-	<!-- Mobile Menu -->
-	<div id="mobile-menu" class="md:hidden fixed inset-0 bg-black/95 z-50 pt-20 sm:pt-24 mobile-menu hidden overflow-y-auto">
+	<!-- Mobile Menu as Dialog -->
+	<dialog id="mobile-menu" class="md:hidden fixed inset-0 bg-black/95 z-50 pt-20 sm:pt-24 mobile-menu p-0 rounded-none border-0 max-w-none w-full h-full overflow-y-auto">
 		<div class="p-4 space-y-4 max-h-screen overflow-y-auto pb-32">
 			<a href="/" class="block manga-panel py-3 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2 text-center text-lg">
 				Home
@@ -65,7 +68,6 @@ const dynamicTitle = await getTitle();
 			<a href="/about" class="block manga-panel py-3 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2 text-center text-lg">
 				About
 			</a>
-			
 			<!-- Links to main Manga-Oppa site -->
 			<a href="/../../" class="block manga-panel py-3 px-4 hover:text-red-500 transition-colors transform hover:rotate-2 text-center text-lg">
 				Main Site
@@ -73,11 +75,11 @@ const dynamicTitle = await getTitle();
 			<a href="/../../discover" class="block manga-panel py-3 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2 text-center text-lg">
 				Discover
 			</a>
-			
 			<button 
 				id="close-menu"
-				class="block w-full manga-panel py-3 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2 flex items-center justify-center gap-2 mt-10"
-				aria-label="Close Menu"
+				class="block w-full manga-panel py-4 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2 flex items-center justify-center gap-2 mt-10 text-lg"
+				aria-label="Close navigation menu"
+				type="button"
 			>
 				<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -85,74 +87,11 @@ const dynamicTitle = await getTitle();
 				Close
 			</button>
 		</div>
-	</div>
+	</dialog>
 </header>
 
 <div class="fixed inset-0 screen-tone pointer-events-none"></div>
 
-<script>
-	// Mobile menu toggle
-	document.addEventListener('DOMContentLoaded', () => {
-		const menuToggle = document.getElementById('menu-toggle');
-		const closeMenu = document.getElementById('close-menu');
-		const mobileMenu = document.getElementById('mobile-menu');
-		const mobileLinks = mobileMenu?.querySelectorAll('a');
-		
-		// Disable scroll when menu is open
-		const toggleScrollLock = (lock) => {
-			document.body.style.overflow = lock ? 'hidden' : '';
-		};
-		
-		menuToggle?.addEventListener('click', () => {
-			// Ensure the mobile menu is properly displayed
-			if (mobileMenu) {
-				mobileMenu.classList.toggle('hidden');
-				const isMenuOpen = !mobileMenu.classList.contains('hidden');
-				toggleScrollLock(isMenuOpen);
-				
-				// Force repaint to ensure proper display
-				setTimeout(() => {
-					if (!mobileMenu.classList.contains('hidden')) {
-						mobileMenu.style.opacity = '0';
-						setTimeout(() => {
-							mobileMenu.style.opacity = '1';
-						}, 10);
-					}
-				}, 0);
-			}
-		});
-		
-		closeMenu?.addEventListener('click', () => {
-			mobileMenu?.classList.add('hidden');
-			toggleScrollLock(false);
-		});
-		
-		// Close menu when a link is clicked
-		mobileLinks?.forEach(link => {
-			link.addEventListener('click', () => {
-				mobileMenu?.classList.add('hidden');
-				toggleScrollLock(false);
-			});
-		});
-		
-		// Sticky header behavior
-		let lastScrollTop = 0;
-		const header = document.querySelector('header');
-		
-		window.addEventListener('scroll', () => {
-			if (mobileMenu?.classList.contains('hidden')) {
-				const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-				
-				if (scrollTop > lastScrollTop && scrollTop > 100) {
-					// Scrolling down, hide header
-					header?.classList.add('-translate-y-full');
-				} else {
-					// Scrolling up, show header
-					header?.classList.remove('-translate-y-full');
-				}
-				
-				lastScrollTop = scrollTop;
-			}
-		});
-	});
+<script is:inline type="module" client:load>
+  import '/src/scripts/mobile-nav.js';
 </script>
