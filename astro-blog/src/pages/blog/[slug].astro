@@ -5,9 +5,22 @@ import Footer from '../../components/Footer.astro';
 import FormattedDate from '../../components/FormattedDate.astro';
 import Breadcrumbs from '../../components/Breadcrumbs.astro';
 import { getTitle, getDescription } from '../../consts';
-import { getBlogPostBySlug, getLatestBlogPosts, getRelatedBlogPosts } from '../../lib/blogDataService.js';
+import { getBlogPostBySlug, getLatestBlogPosts, getRelatedBlogPosts, getAllBlogPosts } from '../../lib/blogDataService.js';
+
+// Required for dynamic routes in Astro
+export async function getStaticPaths() {
+  console.log('DEBUG: Running getStaticPaths for blog/[slug].astro');
+  const { posts } = await getAllBlogPosts({ limit: 1000 }); // adjust limit as needed
+  const paths = posts.map(post => ({
+    params: { slug: post.slug }
+  }));
+  console.log('DEBUG: Blog slugs generated for static paths:', paths);
+  return paths;
+}
+
 
 // Get the slug from the URL
+console.log('DEBUG: Rendering blog/[slug].astro for slug:', Astro.params.slug);
 const { slug } = Astro.params;
 
 // Get dynamic site info
@@ -22,11 +35,19 @@ if (!post) {
   return Astro.redirect('/404');
 }
 
+// Build breadcrumbs for SEO and display
+const breadcrumbs = [
+  { label: 'Home', path: '/', active: false },
+  { label: 'Blog', path: '/blog', active: false },
+  { label: post.title, path: `/blog/${slug}`, active: true }
+];
+
 // Get related blog posts based on manga genres
 const relatedPosts = post.manga ? await getRelatedBlogPosts(post.manga.id, 3) : await getLatestBlogPosts(3);
 
 // Format the manga genres if available
 const genreNames = post.manga?.genres?.map(g => g.genres.name).filter(Boolean) || [];
+
 ---
 
 <!doctype html>
@@ -42,37 +63,226 @@ const genreNames = post.manga?.genres?.map(g => g.genres.name).filter(Boolean) |
       modifiedDate={post.updated_at || post.published_date}
       pageType="article"
       articleSection={post.manga ? 'Manga Review' : 'Blog'}
+      breadcrumbs={breadcrumbs}
     />
     <style>
+      /* Add any page-specific styles here */
+      .manga-cover {
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.8);
+      }
+      
+      /* Blog content styles */
       .blog-content {
-        max-width: 70ch;
-        margin: 0 auto;
-        line-height: 1.8;
+        color: #f8f8f8;
+        line-height: 1.7;
       }
-      .blog-content h1 {
-        font-size: 2rem;
-        margin-top: 2rem;
-        margin-bottom: 1rem;
+      
+      .blog-content h1, .blog-content h2, .blog-content h3, .blog-content h4, .blog-content h5, .blog-content h6 {
+        font-family: 'Bangers', cursive;
+        margin-top: 1.5em;
+        margin-bottom: 0.75em;
+        line-height: 1.2;
+        color: #ffffff;
+        text-shadow: 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000;
+        letter-spacing: 0.05em;
       }
-      .blog-content h2 {
-        font-size: 1.75rem;
-        margin-top: 1.75rem;
-        margin-bottom: 0.75rem;
-      }
-      .blog-content h3 {
-        font-size: 1.5rem;
-        margin-top: 1.5rem;
-        margin-bottom: 0.75rem;
-      }
+      
+      .blog-content h1 { font-size: 2.25rem; }
+      .blog-content h2 { font-size: 1.875rem; }
+      .blog-content h3 { font-size: 1.5rem; }
+      .blog-content h4 { font-size: 1.25rem; }
+      .blog-content h5 { font-size: 1.125rem; }
+      .blog-content h6 { font-size: 1rem; }
+      
       .blog-content p {
-        margin-bottom: 1.5rem;
+        margin-bottom: 1.25em;
       }
+      
+      .blog-content a {
+        color: #ef4444;
+        text-decoration: none;
+        font-weight: bold;
+        position: relative;
+        transition: all 0.3s;
+        padding: 0 2px;
+      }
+      
+      .blog-content a::after {
+        content: '';
+        position: absolute;
+        bottom: -2px;
+        left: 0;
+        width: 100%;
+        height: 2px;
+        background: repeating-linear-gradient(
+          90deg,
+          #ef4444,
+          #ef4444 4px,
+          transparent 4px,
+          transparent 8px
+        );
+        transform: scaleX(0);
+        transform-origin: bottom right;
+        transition: transform 0.3s;
+      }
+      
+      .blog-content a:hover {
+        color: #f87171;
+        text-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+      }
+      
+      .blog-content a:hover::after {
+        transform: scaleX(1);
+        transform-origin: bottom left;
+      }
+      
       .blog-content ul, .blog-content ol {
-        margin-left: 2rem;
-        margin-bottom: 1.5rem;
+        margin-left: 1.5em;
+        margin-bottom: 1.25em;
+      }
+      
+      .blog-content ul {
+        list-style-type: disc;
+      }
+      
+      .blog-content ol {
+        list-style-type: decimal;
       }
       .blog-content li {
         margin-bottom: 0.5rem;
+      }
+      
+      .blog-content blockquote {
+        position: relative;
+        border: 3px solid white;
+        box-shadow: 6px 6px 0 theme('colors.red.500');
+        clip-path: polygon(
+          0 0,
+          100% 0,
+          100% calc(100% - 10px),
+          calc(100% - 10px) 100%,
+          0 100%
+        );
+        padding: 1.5em;
+        margin-left: 0;
+        margin-right: 0;
+        font-style: italic;
+        margin-bottom: 1.5em;
+        background-color: rgba(0, 0, 0, 0.3);
+      }
+      
+      .blog-content blockquote::before {
+        content: '';
+        position: absolute;
+        inset: -3px;
+        background: repeating-linear-gradient(
+          45deg,
+          theme('colors.red.500'),
+          theme('colors.red.500') 3px,
+          transparent 3px,
+          transparent 12px
+        );
+        z-index: -1;
+        opacity: 0.5;
+      }
+      
+      .blog-content img {
+        max-width: 100%;
+        height: auto;
+        border: 3px solid white;
+        box-shadow: 8px 8px 0 rgba(0, 0, 0, 0.5);
+        clip-path: polygon(
+          0 0, 
+          100% 0, 
+          100% calc(100% - 15px), 
+          calc(100% - 15px) 100%, 
+          0 100%
+        );
+        margin: 1.5em 0;
+        transition: transform 0.3s;
+      }
+      
+      .blog-content img:hover {
+        transform: scale(1.02) rotate(1deg);
+      }
+      
+      .blog-content pre {
+        position: relative;
+        background-color: #1a1a1a;
+        padding: 1.5em;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.5);
+        overflow-x: auto;
+        margin-bottom: 1.5em;
+        clip-path: polygon(
+          0 0, 
+          100% 0, 
+          100% calc(100% - 10px), 
+          calc(100% - 10px) 100%, 
+          0 100%
+        );
+      }
+      
+      .blog-content pre::before {
+        content: 'Code';
+        position: absolute;
+        top: 0;
+        right: 0;
+        background-color: #ef4444;
+        color: white;
+        font-family: 'Bangers', cursive;
+        padding: 0.2em 0.8em;
+        font-size: 0.8em;
+        letter-spacing: 0.05em;
+        text-shadow: 1px 1px 0 black;
+        transform: translateY(-50%);
+      }
+      
+      .blog-content code {
+        background-color: rgba(239, 68, 68, 0.2);
+        padding: 0.2em 0.4em;
+        border-radius: 0.25rem;
+        font-family: monospace;
+        border: 1px solid rgba(239, 68, 68, 0.3);
+      }
+      
+      .blog-content table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        margin-bottom: 2em;
+        position: relative;
+        border: 3px solid white;
+        box-shadow: 8px 8px 0 rgba(0, 0, 0, 0.5);
+        overflow: hidden;
+      }
+      
+      .blog-content th, .blog-content td {
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        padding: 0.75em 1em;
+        position: relative;
+      }
+      
+      .blog-content th {
+        background-color: rgba(239, 68, 68, 0.2);
+        font-family: 'Bangers', cursive;
+        letter-spacing: 0.05em;
+        text-shadow: 1px 1px 0 black;
+        text-transform: uppercase;
+      }
+      
+      .blog-content tr:nth-child(even) {
+        background-color: rgba(255, 255, 255, 0.05);
+      }
+      
+      .blog-content tr:hover {
+        background-color: rgba(239, 68, 68, 0.1);
+      }
+      
+      .blog-content hr {
+        border: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        margin: 2em 0;
       }
       .blog-content blockquote {
         border-left: 4px solid #f87171;
@@ -165,7 +375,7 @@ const genreNames = post.manga?.genres?.map(g => g.genres.name).filter(Boolean) |
           )}
           
           <!-- Actual blog content -->
-          <div class="blog-content" set:html={post.content} />
+          <div class="blog-content manga-panel p-6 bg-black/40 prose prose-invert prose-lg max-w-none" set:html={post.content} />
           
           <!-- Keywords/Tags -->
           {post.seo_keywords && (

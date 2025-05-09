@@ -21,7 +21,7 @@ interface BlogPost {
   manga?: {
     title: string;
   };
-
+  status: 'published' | 'draft';
   created_at: string;
 }
 
@@ -247,7 +247,7 @@ const BlogManager: React.FC = () => {
               <h3 className="text-lg font-semibold mb-2">Blog Details</h3>
               <div className="space-y-2">
                 <p><span className="text-gray-400">Slug:</span> {viewingPost.slug}</p>
-                <p><span className="text-gray-400">Status:</span> Published</p>
+                <p><span className="text-gray-400">Status:</span> {viewingPost.status}</p>
                 <p><span className="text-gray-400">Published:</span> {formatDate(viewingPost.published_date)}</p>
                 <p><span className="text-gray-400">Views:</span> {viewingPost.views || 0}</p>
                 {viewingPost.manga && (
@@ -420,8 +420,12 @@ const BlogManager: React.FC = () => {
                       </td>
                       <td className="p-4 hidden sm:table-cell">{post.manga?.title || 'None'}</td>
                       <td className="p-4 hidden md:table-cell">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-900/30 text-green-400 border border-green-600">
-                          Published
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          post.status === 'published' 
+                            ? 'bg-green-900/30 text-green-400 border border-green-600'
+                            : 'bg-yellow-900/30 text-yellow-400 border border-yellow-600'
+                        }`}>
+                          {post.status === 'published' ? 'Published' : 'Draft'}
                         </span>
                       </td>
                       <td className="p-4 hidden md:table-cell">{formatDate(post.published_date)}</td>

@@ -44,13 +44,13 @@ const { count: totalPostCount } = await getAllBlogPosts({ limit: 1 });
 							<a href="/blog" class="manga-border bg-red-500 px-6 py-3 inline-block transform hover:rotate-2 transition-transform">
 								Read Latest Posts
 							</a>
-							<a href="/blog/search" class="manga-border bg-gray-700 px-6 py-3 inline-block transform hover:-rotate-2 transition-transform">
-								Search Blog
+							<a href="/discover" class="manga-border bg-gray-700 px-6 py-3 inline-block transform hover:-rotate-2 transition-transform">
+								Discover More
 							</a>
 						</div>
 					</div>
 					<div class="impact-text text-5xl md:text-7xl right-10 bottom-10 opacity-50 hidden md:block">
-						Manhva-Oppa!
+						{dynamicTitle}
 					</div>
 				</div>
 			</div>
@@ -113,8 +113,8 @@ const { count: totalPostCount } = await getAllBlogPosts({ limit: 1 });
 						<a href="/blog" class="manga-border px-6 py-3 inline-block transform hover:-rotate-2 transition-transform">
 							Browse All Posts
 						</a>
-						<a href="/blog/archive" class="manga-border px-6 py-3 inline-block transform hover:rotate-2 transition-transform bg-gray-700">
-							View Archive
+						<a href="/discover" class="manga-border px-6 py-3 inline-block transform hover:rotate-2 transition-transform bg-gray-700">
+							Discover More
 						</a>
 					</div>
 				</div>

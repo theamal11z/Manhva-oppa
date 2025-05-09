@@ -15,24 +15,15 @@ const dynamicTitle = await getTitle();
 			<div class="hidden md:flex items-center space-x-4">
 				<HeaderLink href="/">Home</HeaderLink>
 				<HeaderLink href="/blog">Blog</HeaderLink>
-				<HeaderLink href="/blog/archive">Archive</HeaderLink>
+				<HeaderLink href="/discover">Discover</HeaderLink>
 				<HeaderLink href="/about">About</HeaderLink>
 				
-				<!-- Search Button -->
-				<a href="/blog/search" class="manga-border px-4 py-2 hover:text-red-500 transition-all transform hover:scale-105 flex items-center gap-2">
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-						<path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
-					</svg>
-					Search
-				</a>
 				
 				<!-- Links to main Manga-Oppa site -->
 				<a href="/../../" class="manga-border px-4 py-2 hover:text-red-500 transition-all transform hover:scale-105 hover:-rotate-2 flex items-center gap-2">
 					Main Site
 				</a>
-				<a href="/../../discover" class="manga-border px-4 py-2 hover:text-red-500 transition-all transform hover:scale-105 hover:rotate-2 flex items-center gap-2">
-					Discover
-				</a>
+				
 			</div>
 			
 			<button
@@ -59,12 +50,10 @@ const dynamicTitle = await getTitle();
 			<a href="/blog" class="block manga-panel py-3 px-4 hover:text-red-500 transition-colors transform hover:rotate-2 text-center text-lg">
 				Blog
 			</a>
-			<a href="/blog/archive" class="block manga-panel py-3 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2 text-center text-lg">
-				Archive
+			<a href="/discover" class="block manga-panel py-3 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2 text-center text-lg">
+				Discover
 			</a>
-			<a href="/blog/search" class="block manga-panel py-3 px-4 hover:text-red-500 transition-colors transform hover:rotate-2 text-center text-lg">
-				Search
-			</a>
+			
 			<a href="/about" class="block manga-panel py-3 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2 text-center text-lg">
 				About
 			</a>
@@ -72,9 +61,7 @@ const dynamicTitle = await getTitle();
 			<a href="/../../" class="block manga-panel py-3 px-4 hover:text-red-500 transition-colors transform hover:rotate-2 text-center text-lg">
 				Main Site
 			</a>
-			<a href="/../../discover" class="block manga-panel py-3 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2 text-center text-lg">
-				Discover
-			</a>
+			
 			<button 
 				id="close-menu"
 				class="block w-full manga-panel py-4 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2 flex items-center justify-center gap-2 mt-10 text-lg"

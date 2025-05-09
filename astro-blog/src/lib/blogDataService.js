@@ -56,7 +56,6 @@ export async function getBlogPostBySlug(slug) {
           description, 
           author,
           status,
-          published_year,
           genres:manga_genres(genres(*)),
           tags:manga_tags(tags(*))
         )
@@ -168,33 +167,76 @@ export async function getRelatedBlogPosts(mangaId, limit = 3) {
 }
 
 /**
- * Search for blog posts
- * @param {string} query - Search query
- * @param {number} limit - Maximum number of posts to fetch
- * @returns {Promise<Array>} - Matching blog posts
+ * Fetch all blog posts from Supabase, ignoring the search query.
+ * Filtering will be done on the frontend.
+ * @param {string} query - Search query (ignored)
+ * @param {Object} options - Search options
+ * @param {number} options.limit - Maximum number of posts to fetch
+ * @returns {Promise<Object>} - Object containing all blog posts
  */
-export async function searchBlogPosts(query, limit = 10) {
+export async function searchBlogPosts(query, options = {}) {
+  const { limit = 1000 } = options; // Increase limit to fetch more posts if needed
+
   try {
-    const { data, error } = await supabase
+    let queryBuilder = supabase
       .from('blog_posts')
       .select(`
         *,
         manga:manga_entries(id, title, cover_image)
       `)
-      .or(`title.ilike.%${query}%, content.ilike.%${query}%, seo_keywords.ilike.%${query}%`)
       .order('published_date', { ascending: false })
       .limit(limit);
-    
+
+    const { data, error } = await queryBuilder;
     if (error) {
-      console.error('Error searching blog posts:', error);
-      return [];
+      console.error('Error fetching blog posts:', error);
+      return { posts: [], relatedTerms: [] };
     }
-    
-    return data || [];
+    return { posts: data || [], relatedTerms: [] };
   } catch (error) {
-    console.error('Error searching blog posts:', error);
-    return [];
+    console.error('Error fetching blog posts:', error);
+    return { posts: [], relatedTerms: [] };
   }
+}
+
+/**
+ * Generate related search terms based on search results
+ * @param {Array} results - Search results
+ * @param {string} originalQuery - Original search query
+ * @returns {Array} - Related search terms
+ */
+function generateRelatedTerms(results, originalQuery) {
+  if (!results || results.length === 0 || !originalQuery) return [];
+  
+  // Extract keywords from search results
+  const allKeywords = results
+    .flatMap(post => {
+      // Get keywords from post
+      const postKeywords = post.seo_keywords ? post.seo_keywords.split(',').map(k => k.trim()) : [];
+      
+      // Get genre names if available
+      const genreNames = post.manga?.genres
+        ? post.manga.genres.map(g => g.genres?.name).filter(Boolean)
+        : [];
+      
+      return [...postKeywords, ...genreNames];
+    })
+    .filter(Boolean);
+  
+  // Count keyword occurrences
+  const keywordCounts = allKeywords.reduce((acc, keyword) => {
+    // Skip keywords that are too similar to the original query
+    if (keyword.toLowerCase() === originalQuery.toLowerCase()) return acc;
+    
+    acc[keyword] = (acc[keyword] || 0) + 1;
+    return acc;
+  }, {});
+  
+  // Sort by frequency and return top 5
+  return Object.entries(keywordCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([term]) => term);
 }
 
 /**

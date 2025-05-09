@@ -123,9 +123,9 @@ const formattedModifiedDate = modifiedDate ? new Date(modifiedDate).toISOString(
     "description": ${JSON.stringify(description)},
     "image": ${JSON.stringify(new URL(image, Astro.url).toString())},
     "author": {
-      "@type": "Organization",
+      "@type": ${JSON.stringify(author !== 'Manhva-Oppa' ? 'Person' : 'Organization')},
       "name": ${JSON.stringify(author)},
-      "url": ${JSON.stringify(Astro.site?.toString())}
+      ${author !== 'Manhva-Oppa' ? '' : `"url": ${JSON.stringify(Astro.site?.toString())}`}
     },
     "publisher": {
       "@type": "Organization",
@@ -144,3 +144,19 @@ const formattedModifiedDate = modifiedDate ? new Date(modifiedDate).toISOString(
     }
   }
 </script>
+
+{Astro.props.breadcrumbs && (
+  <script type="application/ld+json">
+    {JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": Astro.props.breadcrumbs.map((crumb, idx) => ({
+        "@type": "ListItem",
+        "position": idx + 1,
+        "name": crumb.label,
+        "item": new URL(crumb.path, Astro.site).toString()
+      }))
+    })}
+  </script>
+)
+}

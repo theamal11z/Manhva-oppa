@@ -1,0 +1,674 @@
+---
+import BaseHead from '../components/BaseHead.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import FormattedDate from '../components/FormattedDate.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+import { getTitle, getDescription } from '../consts';
+import { getAllBlogPosts, searchBlogPosts, getPopularTags } from '../lib/discoveryDataService.js';
+
+// Get search query and filters from URL
+const query = Astro.url.searchParams.get('q') || '';
+const selectedTags = Astro.url.searchParams.getAll('tag').filter(Boolean);
+const sortBy = Astro.url.searchParams.get('sort') || 'published_date';
+
+// Get dynamic site info
+const dynamicTitle = await getTitle();
+const dynamicDescription = await getDescription();
+
+// Fetch blog posts based on search/filters
+let blogResults = [];
+let relatedTags = [];
+let searchError = null;
+
+try {
+  if (query) {
+    const searchResults = await searchBlogPosts(query, { tags: selectedTags });
+    blogResults = searchResults.posts;
+    relatedTags = searchResults.relatedTags;
+  } else {
+    blogResults = await getAllBlogPosts({ 
+      orderBy: sortBy, 
+      tags: selectedTags 
+    });
+  }
+} catch (err) {
+  searchError = err;
+  console.error('Discover error:', err);
+}
+
+// Get popular tags for filters
+const popularTags = await getPopularTags(12);
+
+// Helper function to highlight search terms in text
+function highlightText(text, searchQuery) {
+  if (!text || !searchQuery) return text;
+  
+  const terms = searchQuery.trim().split(/\s+/).filter(term => term.length > 2);
+  if (terms.length === 0) return text;
+  
+  let highlightedText = text;
+  terms.forEach(term => {
+    const regex = new RegExp(`(${term})`, 'gi');
+    highlightedText = highlightedText.replace(regex, '<mark class="bg-red-500/30 px-0.5">$1</mark>');
+  });
+  
+  return highlightedText;
+}
+
+// Sort options
+const sortOptions = [
+  { value: 'published_date', label: 'Newest' },
+  { value: 'published_date_asc', label: 'Oldest' },
+  { value: 'title', label: 'Title (A-Z)' },
+  { value: 'title_desc', label: 'Title (Z-A)' },
+  { value: 'views', label: 'Most Viewed' },
+  { value: 'views_asc', label: 'Least Viewed' }
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <BaseHead 
+      title={query ? `Discover Blog Posts: ${query} | ${dynamicTitle}` : `Discover Blog Posts | ${dynamicTitle}`}
+      description={`Discover interesting blog posts on ${dynamicTitle}. ${dynamicDescription}`}
+      keywords={`blog discover, blog search, ${query || 'anime blog, manga blog'}, manga articles`}
+      pageType="CollectionPage"
+    />
+  </head>
+  <body>
+    <Header />
+    <main>
+      <Breadcrumbs title={query ? `Discover: ${query}` : 'Discover Blog Posts'} />
+      
+      <!-- Hero Section -->
+      <section class="py-16 bg-gray-900 relative overflow-hidden">
+        <div class="screen-tone absolute inset-0 opacity-30"></div>
+        <div class="max-w-6xl mx-auto px-4 text-center relative z-10">
+          <h1 class="manga-title text-4xl md:text-5xl mb-4">Discover Blog Posts</h1>
+          <p class="text-lg text-gray-300 max-w-3xl mx-auto mb-8">
+            Find your next favorite blog articles. Browse our collection or search for specific topics, tags, or keywords.
+          </p>
+          
+          <!-- Search Form -->
+          <div class="max-w-3xl mx-auto mt-8">
+            <div class="flex flex-wrap md:flex-nowrap gap-2">
+              <input 
+                type="text" 
+                id="search-input"
+                name="q" 
+                value={query}
+                placeholder="Search for blog posts..." 
+                class="manga-border flex-grow px-4 py-3 bg-gray-800 text-white focus:outline-none focus:ring-2 focus:ring-red-500 w-full md:w-auto"
+              />
+              <button 
+                id="search-button"
+                class="manga-border px-6 py-3 bg-red-500 hover:bg-red-600 transition-colors flex items-center gap-2 w-full md:w-auto justify-center"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
+                </svg>
+                Search
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+      
+      <!-- Filter/Sort Section -->
+      <section class="py-6 bg-black border-y border-gray-800">
+        <div class="max-w-6xl mx-auto px-4">
+          <div class="flex flex-wrap items-center justify-between gap-4">
+            <!-- Tag Filter -->
+            <div class="w-full md:w-auto">
+              <div id="tag-filters" class="flex flex-wrap gap-2">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-gray-400">Tags:</span>
+                  {popularTags.map(tag => (
+                    <label class="manga-border px-2 py-1 text-sm cursor-pointer bg-gray-900 hover:bg-gray-800 transition-colors flex items-center gap-1">
+                      <input 
+                        type="checkbox" 
+                        name="tag-filter" 
+                        value={tag.name} 
+                        checked={selectedTags.includes(tag.name)}
+                        class="tag-checkbox form-checkbox h-3 w-3 text-red-500 rounded"
+                      />
+                      <span>{tag.name}</span>
+                      <span class="text-xs text-gray-500">({tag.count})</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+            
+            <!-- Sort Options -->
+            <div class="w-full md:w-auto">
+              <div class="flex items-center gap-2">
+                <span class="text-gray-400">Sort by:</span>
+                <select 
+                  id="sort-select"
+                  class="manga-border px-3 py-2 bg-gray-900 text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                >
+                  {sortOptions.map(option => (
+                    <option value={option.value} selected={sortBy === option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      
+      <!-- Results Section -->
+      <section class="py-12">
+        <div class="max-w-6xl mx-auto px-4">
+          {query && (
+            <div class="mb-6">
+              <h2 class="text-2xl">
+                {blogResults.length === 0
+                  ? `No blog posts found for "${query}"`
+                  : `Found ${blogResults.length} blog posts for "${query}"`}
+              </h2>
+            </div>
+          )}
+          
+          <!-- Related Tags -->
+          {relatedTags.length > 0 && (
+            <div class="mb-6">
+              <h3 class="text-lg text-gray-400 mb-2">Related Tags:</h3>
+              <div class="flex flex-wrap gap-2">
+                {relatedTags.slice(0, 8).map(tag => (
+                  <a 
+                    href={`/discover?${query ? `q=${query}&` : ''}tag=${encodeURIComponent(tag.name)}`} 
+                    class="manga-border px-3 py-1.5 text-sm bg-gray-900 hover:bg-red-900/30 transition-colors"
+                  >
+                    {tag.name} <span class="text-gray-500 text-xs">({tag.count})</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          <!-- Blog Posts Grid -->
+          <div id="blog-results-container">
+            {blogResults.length > 0 ? (
+              <div id="blog-results" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                {blogResults.map(post => (
+                <a href={`/blog/${post.slug}`} class="manga-panel bg-gray-900 hover:transform hover:scale-105 transition-transform group overflow-hidden flex flex-col h-full">
+                  <div class="relative aspect-[16/9] overflow-hidden manga-border">
+                    <img 
+                      src={post.featured_image || post.manga?.cover_image || '/blog-placeholder-1.jpg'} 
+                      alt={post.title}
+                      class="w-full h-full object-cover object-center transition-transform group-hover:scale-110"
+                      loading="lazy"
+                    />
+                    {post.views > 0 && (
+                      <div class="absolute top-2 right-2 bg-black/80 text-white text-xs font-medium px-2 py-1 rounded-sm">
+                        <span class="flex items-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
+                            <path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd" />
+                          </svg>
+                          {post.views}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <div class="p-4 flex-grow flex flex-col">
+                    <h3 class="font-bold text-base sm:text-lg transition-colors group-hover:text-red-500 line-clamp-2 min-h-[2.5rem]">
+                      {query 
+                        ? <Fragment set:html={highlightText(post.title, query)} />
+                        : post.title
+                      }
+                    </h3>
+                    <div class="mt-2 text-sm text-gray-400">
+                      <FormattedDate date={new Date(post.published_date)} />
+                    </div>
+                    {post.seo_description && (
+                      <p class="mt-3 text-sm text-gray-300 line-clamp-2">
+                        {query 
+                          ? <Fragment set:html={highlightText(post.seo_description, query)} />
+                          : post.seo_description
+                        }
+                      </p>
+                    )}
+                    {post.seo_keywords && (
+                      <div class="flex flex-wrap gap-1 mt-3">
+                        {post.seo_keywords.split(',').slice(0, 3).map(tag => (
+                          <span class="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">
+                            {tag.trim()}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </a>
+                ))}
+              </div>
+            ) : (
+              <div id="no-results" class="manga-panel p-8 text-center">
+                {searchError ? (
+                <div>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto mb-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <h3 class="text-xl font-bold mb-2">Error Loading Manga</h3>
+                  <p class="text-gray-400">There was an error loading the manga library. Please try again later.</p>
+                </div>
+              ) : query ? (
+                <div>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto mb-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <h3 class="text-xl font-bold mb-2">No Results Found</h3>
+                  <p class="text-gray-400">We couldn't find any blog posts matching your search for "{query}".</p>
+                  <div class="mt-4">
+                    <a href="/discover" class="manga-border inline-block px-4 py-2 bg-red-500 hover:bg-red-600 transition-colors">
+                      Browse All Blog Posts
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto mb-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  <h3 class="text-xl font-bold mb-2">No Blog Posts Available</h3>
+                  <p class="text-gray-400">The blog library is currently empty. Check back later!</p>
+                </div>
+                )}
+              </div>
+            )}
+          </div>
+          
+          <!-- Pagination (if needed) -->
+          <!-- <div class="mt-8 flex justify-center">
+            <nav class="inline-flex" aria-label="Pagination">
+              <a href="#" class="manga-border px-4 py-2 mr-1 bg-gray-900 hover:bg-red-900/30 transition-colors">Previous</a>
+              <a href="#" class="manga-border px-4 py-2 ml-1 bg-red-500 hover:bg-red-600 transition-colors">Next</a>
+            </nav>
+          </div> -->
+        </div>
+      </section>
+      
+      <!-- Recommendations Section -->
+      <section class="py-12 bg-gray-900 border-t border-gray-800">
+        <div class="max-w-6xl mx-auto px-4">
+          <h2 class="manga-title text-2xl md:text-3xl mb-6 transform -rotate-1">Recommended for You</h2>
+          <p class="text-gray-400 mb-8">
+            Based on your browsing history and popular content, we think you might enjoy these blog posts.
+          </p>
+          
+          <!-- This would typically be populated based on user history and preferences -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+            {blogResults.slice(0, 3).map(post => (
+              <a href={`/blog/${post.slug}`} class="manga-panel bg-gray-900 hover:transform hover:scale-105 transition-transform group overflow-hidden">
+                <div class="relative aspect-[16/9] overflow-hidden manga-border">
+                  <img 
+                    src={post.featured_image || post.manga?.cover_image || '/blog-placeholder-1.jpg'} 
+                    alt={post.title}
+                    class="w-full h-full object-cover object-center transition-transform group-hover:scale-110"
+                    loading="lazy"
+                  />
+                </div>
+                <div class="p-4">
+                  <h3 class="font-bold text-base sm:text-lg transition-colors group-hover:text-red-500">{post.title}</h3>
+                  <div class="mt-2 text-sm text-gray-400">
+                    <FormattedDate date={new Date(post.published_date)} />
+                  </div>
+                  {post.seo_keywords && (
+                    <div class="flex flex-wrap gap-1 mt-3">
+                      {post.seo_keywords.split(',').slice(0, 2).map(tag => (
+                        <span class="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">
+                          {tag.trim()}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      </section>
+    </main>
+    <Footer />
+    
+    <script is:inline>
+      // Client-side live search and filtering
+      document.addEventListener('DOMContentLoaded', () => {
+        // Get all blog posts from the server-rendered HTML
+        const blogPostsContainer = document.getElementById('blog-results');
+        let noResultsContainer = document.getElementById('no-results');
+        const resultsContainer = document.getElementById('blog-results-container');
+        const searchInput = document.getElementById('search-input');
+        const searchButton = document.getElementById('search-button');
+        const tagCheckboxes = document.querySelectorAll('.tag-checkbox');
+        const sortSelect = document.getElementById('sort-select');
+        
+        // Store all blog posts for filtering
+        let allBlogPosts = [];
+        const blogPostElements = document.querySelectorAll('#blog-results > a');
+        
+        // Extract data from rendered posts including data needed for sorting
+        blogPostElements.forEach(postEl => {
+          const titleEl = postEl.querySelector('h3');
+          const tagsEls = postEl.querySelectorAll('.flex-wrap.gap-1.mt-3 span');
+          const dateEl = postEl.querySelector('.mt-2.text-sm.text-gray-400');
+          const descriptionEl = postEl.querySelector('p.mt-3.text-sm.text-gray-300');
+          
+          // Extract views count if present (for sorting by views)
+          let viewCount = 0;
+          const viewsEl = postEl.querySelector('.absolute.top-2.right-2');
+          if (viewsEl) {
+            // Try to extract the number from the element
+            const viewsText = viewsEl.textContent.trim();
+            const viewsMatch = viewsText.match(/\d+/);
+            if (viewsMatch) {
+              viewCount = parseInt(viewsMatch[0], 10);
+            }
+          }
+          
+          // Get date from time element for proper date sorting
+          let publishDate = new Date();
+          if (dateEl) {
+            const timeEl = dateEl.querySelector('time');
+            if (timeEl && timeEl.getAttribute('datetime')) {
+              publishDate = new Date(timeEl.getAttribute('datetime'));
+            }
+          }
+          
+          const tags = [];
+          tagsEls.forEach(tag => {
+            if (tag.textContent.trim()) {
+              tags.push(tag.textContent.trim());
+            }
+          });
+          
+          allBlogPosts.push({
+            element: postEl.cloneNode(true),
+            title: titleEl ? titleEl.textContent.trim() : '',
+            description: descriptionEl ? descriptionEl.textContent.trim() : '',
+            date: dateEl ? dateEl.textContent.trim() : '',
+            publishDate: publishDate, // Store the actual Date object
+            publishDateIso: publishDate.toISOString(), // Store ISO string for debugging
+            viewCount: viewCount,    // Store the extracted view count
+            tags: tags,
+            href: postEl.getAttribute('href')
+          });
+        });
+        
+        // Filter function
+        function filterPosts() {
+          const searchTerm = searchInput.value.toLowerCase().trim();
+          const selectedTags = Array.from(tagCheckboxes)
+            .filter(cb => cb.checked)
+            .map(cb => cb.value);
+          const sortBy = sortSelect.value;
+          
+          // Immediately display all blog posts if no filters are set
+          if (searchTerm === '' && selectedTags.length === 0) {
+            // Remove any "no results" container
+            const existingNoResults = document.getElementById('no-results');
+            if (existingNoResults) {
+              existingNoResults.remove();
+              noResultsContainer = null;
+            }
+            
+            // Show all blog posts
+            blogPostsContainer.innerHTML = '';
+            allBlogPosts.forEach(post => {
+              blogPostsContainer.appendChild(post.element.cloneNode(true));
+            });
+            blogPostsContainer.style.display = 'grid';
+            
+            // Update URL to clean state
+            window.history.pushState({}, '', window.location.pathname);
+            return; // Exit early - no need to do further filtering
+          }
+          
+          // Filter posts by search term and tags
+          let filteredPosts = allBlogPosts.filter(post => {
+            // Search term filter
+            const matchesSearch = searchTerm === '' ||
+              post.title.toLowerCase().includes(searchTerm) ||
+              post.description.toLowerCase().includes(searchTerm) ||
+              post.tags.some(tag => tag.toLowerCase().includes(searchTerm));
+            
+            // Tags filter
+            const matchesTags = selectedTags.length === 0 ||
+              selectedTags.some(tag => post.tags.includes(tag));
+            
+            return matchesSearch && matchesTags;
+          });
+          
+          // Sort filtered posts
+          switch(sortBy) {
+            case 'title': // Title A-Z
+              filteredPosts.sort((a, b) => a.title.localeCompare(b.title));
+              break;
+              
+            case 'title_desc': // Title Z-A
+              filteredPosts.sort((a, b) => b.title.localeCompare(a.title));
+              break;
+              
+            case 'views': // Most views first
+              filteredPosts.sort((a, b) => b.viewCount - a.viewCount);
+              break;
+              
+            case 'views_asc': // Least views first
+              filteredPosts.sort((a, b) => a.viewCount - b.viewCount);
+              break;
+              
+            case 'published_date_asc': // Oldest first
+              filteredPosts.sort((a, b) => a.publishDate - b.publishDate);
+              break;
+              
+            case 'published_date': // Newest first (default)
+            default:
+              filteredPosts.sort((a, b) => b.publishDate - a.publishDate);
+              break;
+          }
+          
+          // Log the sorting results for debugging
+          console.log(`Sorted by ${sortBy}:`, filteredPosts.map(p => ({
+            title: p.title, 
+            date: p.publishDateIso,
+            views: p.viewCount
+          })).slice(0, 3));
+          
+          // Clear both containers first
+          blogPostsContainer.innerHTML = '';
+          
+          // Always ensure both containers have correct display property
+          if (filteredPosts.length > 0) {
+            // We have results, show them and REMOVE no results message
+            filteredPosts.forEach(post => {
+              blogPostsContainer.appendChild(post.element.cloneNode(true));
+            });
+            
+            // Make sure results are visible 
+            blogPostsContainer.style.display = 'grid';
+            
+            // COMPLETELY REMOVE the no results container if it exists
+            if (noResultsContainer) {
+              noResultsContainer.remove(); // Remove from DOM entirely
+              noResultsContainer = null;   // Clear the reference
+            }
+          } else {
+            // No results - hide results container and show no results message
+            blogPostsContainer.style.display = 'none';
+            
+            // Show the no results container
+            if (noResultsContainer) {
+              // Show existing no results container
+              noResultsContainer.style.display = 'block';
+              
+              // Update the message to include search term
+              const noResultsMessage = noResultsContainer.querySelector('p.text-gray-400');
+              if (noResultsMessage) {
+                let message = 'No blog posts found.';
+                
+                // Add search term to message if there is one
+                if (searchTerm) {
+                  message = `We couldn't find any blog posts matching your search for "${searchTerm}".`;
+                }
+                
+                // Add tag filter info if there are selected tags
+                if (selectedTags.length > 0) {
+                  const tagsList = selectedTags.join('", "');
+                  message += ` (Filtered by tags: "${tagsList}")`;
+                }
+                
+                noResultsMessage.textContent = message;
+              }
+            } else {
+              // Create no results message if it doesn't exist
+              const noResultsDiv = document.createElement('div');
+              noResultsDiv.id = 'no-results';
+              noResultsDiv.className = 'manga-panel p-8 text-center';
+              
+              // Build the message
+              let message = 'No blog posts found.';
+              if (searchTerm) {
+                message = `We couldn't find any blog posts matching your search for "${searchTerm}".`;
+              }
+              if (selectedTags.length > 0) {
+                const tagsList = selectedTags.join('", "');
+                message += ` (Filtered by tags: "${tagsList}")`;
+              }
+              
+              noResultsDiv.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto mb-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <h3 class="text-xl font-bold mb-2">No Results Found</h3>
+                <p class="text-gray-400">${message}</p>
+                <div class="mt-4">
+                  <button class="reset-filters manga-border inline-block px-4 py-2 bg-red-500 hover:bg-red-600 transition-colors">
+                    Clear Filters
+                  </button>
+                </div>
+              `;
+              resultsContainer.appendChild(noResultsDiv);
+            }
+          }
+          
+          // For debugging
+          console.log('Filtered posts:', filteredPosts.length, 'Showing results:', blogPostsContainer.style.display !== 'none');
+          
+          // Update URL without refreshing page
+          const params = new URLSearchParams();
+          if (searchTerm) params.set('q', searchTerm);
+          selectedTags.forEach(tag => params.append('tag', tag));
+          if (sortBy && sortBy !== 'published_date') params.set('sort', sortBy);
+          
+          // Add helpful sorting info to the UI
+          const sortLabel = sortOptions.find(opt => opt.value === sortBy)?.label || 'Newest';
+          const sortInfoEl = document.getElementById('sort-info');
+          if (sortInfoEl) {
+            // Update existing sort info element
+            sortInfoEl.textContent = `Sorted by: ${sortLabel}`;
+          } else if (filteredPosts.length > 0) {
+            // Create sort info element if it doesn't exist
+            const sortInfo = document.createElement('div');
+            sortInfo.id = 'sort-info';
+            sortInfo.className = 'text-sm text-gray-500 mb-4';
+            sortInfo.textContent = `Sorted by: ${sortLabel}`;
+            blogPostsContainer.parentNode.insertBefore(sortInfo, blogPostsContainer);
+          }
+          
+          const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+          window.history.pushState({}, '', newUrl);
+        }
+        
+        // Reset all filters - utility function
+        function clearAllFilters() {
+          // Reset input fields and checkboxes
+          searchInput.value = '';
+          tagCheckboxes.forEach(cb => cb.checked = false);
+          sortSelect.value = 'published_date';
+          
+          // Remove any no-results container that might exist
+          const existingNoResults = document.getElementById('no-results');
+          if (existingNoResults) {
+            existingNoResults.remove();
+            noResultsContainer = null;
+          }
+          
+          // Run the filter with cleared settings
+          filterPosts();
+          
+          // Update URL to clean state
+          window.history.pushState({}, '', window.location.pathname);
+        }
+        
+        // Add event listeners
+        let debounceTimeout = null;
+        
+        // Live search with debounce
+        searchInput.addEventListener('input', () => {
+          clearTimeout(debounceTimeout);
+          debounceTimeout = setTimeout(() => {
+            filterPosts();
+          }, 300); // 300ms debounce delay
+        });
+        
+        // Search button click
+        searchButton.addEventListener('click', () => {
+          filterPosts();
+        });
+        
+        // Tag filters change
+        tagCheckboxes.forEach(checkbox => {
+          checkbox.addEventListener('change', () => {
+            // Check if any tag is still checked
+            const anyTagChecked = Array.from(tagCheckboxes).some(cb => cb.checked);
+            
+            // If no tags are checked and search is empty, immediately show all posts
+            if (!anyTagChecked && searchInput.value.trim() === '') {
+              clearAllFilters();
+            } else {
+              filterPosts();
+            }
+          });
+        });
+        
+        // Sort change with immediate filtering
+        sortSelect.addEventListener('change', (event) => {
+          filterPosts();
+        });
+
+        // Ensure sort filter works on load and initial render
+        if (sortSelect) {
+          // Set from URL if available
+          const urlParams = new URLSearchParams(window.location.search);
+          const urlSort = urlParams.get('sort');
+          if (urlSort && sortOptions.some(opt => opt.value === urlSort)) {
+            sortSelect.value = urlSort;
+          }
+        }
+        // Always run filterPosts on load to apply initial sort
+        filterPosts();
+        
+        // Reset filters when clicking reset button
+        document.addEventListener('click', (e) => {
+          if (e.target.classList.contains('reset-filters')) {
+            clearAllFilters();
+          }
+        });
+        
+        // Handle page load - if there are no filters, ensure all posts are shown
+        if (searchInput.value === '' && Array.from(tagCheckboxes).every(cb => !cb.checked)) {
+          // Make sure the results grid is visible and no-results is gone
+          if (blogPostsContainer) blogPostsContainer.style.display = 'grid';
+          if (noResultsContainer) {
+            noResultsContainer.remove();
+            noResultsContainer = null;
+          }
+        }
+      });
+    </script>
+  </body>
+</html>

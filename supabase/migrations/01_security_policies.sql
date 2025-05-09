@@ -70,13 +70,12 @@ CREATE POLICY "Users can insert their own profiles"
 ON public.user_profiles FOR INSERT WITH CHECK (auth.uid() = id);
 
 -- Admins policies
+-- DO NOT use public.is_admin() in policies on public.admins to avoid recursion!
 -- Anyone can view the admins table (no sensitive data, just user-admin mappings)
 CREATE POLICY "Admins table is viewable by everyone" 
 ON public.admins FOR SELECT USING (true);
 
--- Only authenticated users can try to insert records
--- Note: You would typically handle admin creation through a secure API endpoint
--- with additional business logic, not through direct table access
+-- Only authenticated users can insert admin records
 CREATE POLICY "Only authenticated users can attempt to insert admin records" 
 ON public.admins FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 
