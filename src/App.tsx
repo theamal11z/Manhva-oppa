@@ -42,32 +42,54 @@ function App() {
   // Fix for Profile page tabs not being clickable
   useEffect(() => {
     if (location.pathname === '/profile') {
-      // Give time for the component to render
-      const timer = setTimeout(() => {
-        // Find all overlays that might be blocking clicks
-        const overlays = document.querySelectorAll('.fixed, .absolute');
+      // Create a style element with aggressive CSS fixes
+      const styleEl = document.createElement('style');
+      styleEl.id = 'profile-fix-styles';
+      styleEl.textContent = `
+        /* Make sure the profile container is above other elements */
+        .pt-20.pb-16 { 
+          position: relative !important; 
+          z-index: 100 !important; 
+        }
         
-        overlays.forEach(overlay => {
-          // Skip elements that are part of the Profile sidebar
-          if (overlay.closest('.manga-panel') || 
-              overlay.closest('button') || 
-              overlay.closest('a')) {
-            return;
-          }
-          
-          // Check if this overlay is blocking clicks
-          const style = window.getComputedStyle(overlay as Element);
-          if (style.pointerEvents !== 'none' && 
-              style.display !== 'none' && 
-              style.visibility !== 'hidden') {
-            // Make it not block clicks
-            (overlay as HTMLElement).style.pointerEvents = 'none';
-            console.log('Fixed overlay:', overlay);
-          }
-        });
-      }, 500);
+        /* Ensure the sidebar has proper stacking and pointer events */
+        .md\:w-64 { 
+          position: relative !important; 
+          z-index: 110 !important; 
+          pointer-events: auto !important;
+        }
+        
+        /* Force all clickable elements in the sidebar to receive pointer events */
+        .md\:w-64 div[onClick], 
+        .md\:w-64 button,
+        .md\:w-64 a { 
+          position: relative !important; 
+          z-index: 120 !important; 
+          pointer-events: auto !important;
+          cursor: pointer !important;
+        }
+        
+        /* Make sure navigation doesn't interfere with profile tabs */
+        nav.fixed { 
+          pointer-events: auto !important;
+        }
+        nav.fixed ~ * {
+          position: relative !important;
+        }
+      `;
       
-      return () => clearTimeout(timer);
+      // Add the style element to the head
+      document.head.appendChild(styleEl);
+      
+      console.log('Applied aggressive CSS fixes for Profile page');
+      
+      // Clean up function to remove the style element when leaving the profile page
+      return () => {
+        const existingStyle = document.getElementById('profile-fix-styles');
+        if (existingStyle) {
+          existingStyle.remove();
+        }
+      };
     }
   }, [location.pathname]);
 

@@ -310,32 +310,32 @@ const Profile: React.FC = () => {
             
             {/* Nav tabs */}
             <div className="manga-panel bg-black/20 overflow-hidden" style={{ position: 'relative', zIndex: 100 }}>
-              <button
+              <div 
                 onClick={() => setActiveTab('profile')}
-                className={`flex items-center gap-3 w-full p-4 text-left ${activeTab === 'profile' ? 'bg-black/40' : 'hover:bg-black/30'} transition-colors`}
-                style={{ pointerEvents: 'auto' }}
+                className={`flex items-center gap-3 w-full p-4 text-left cursor-pointer ${activeTab === 'profile' ? 'bg-black/40' : 'hover:bg-black/30'} transition-colors`}
+                style={{ pointerEvents: 'auto !important' }}
               >
                 <User className="w-5 h-5" />
-                Profile
-              </button>
+                <span>Profile</span>
+              </div>
               
-              <button
+              <div 
                 onClick={() => setActiveTab('preferences')}
-                className={`flex items-center gap-3 w-full p-4 text-left ${activeTab === 'preferences' ? 'bg-black/40' : 'hover:bg-black/30'} transition-colors`}
-                style={{ pointerEvents: 'auto' }}
+                className={`flex items-center gap-3 w-full p-4 text-left cursor-pointer ${activeTab === 'preferences' ? 'bg-black/40' : 'hover:bg-black/30'} transition-colors`}
+                style={{ pointerEvents: 'auto !important' }}
               >
                 <Settings className="w-5 h-5" />
-                Preferences
-              </button>
+                <span>Preferences</span>
+              </div>
               
-              <button
+              <div 
                 onClick={() => setActiveTab('history')}
-                className={`flex items-center gap-3 w-full p-4 text-left ${activeTab === 'history' ? 'bg-black/40' : 'hover:bg-black/30'} transition-colors`}
-                style={{ pointerEvents: 'auto' }}
+                className={`flex items-center gap-3 w-full p-4 text-left cursor-pointer ${activeTab === 'history' ? 'bg-black/40' : 'hover:bg-black/30'} transition-colors`}
+                style={{ pointerEvents: 'auto !important' }}
               >
                 <History className="w-5 h-5" />
-                Reading History
-              </button>
+                <span>Reading History</span>
+              </div>
             </div>
             
             {/* Quick links */}
