@@ -1,11 +1,28 @@
-# Allow all web crawlers
+# Manhva-Oppa Blog - Robots.txt
+
+# Allow most crawlers
 User-agent: *
 Allow: /
 
-# Sitemap location
-Sitemap: https://blog.manhva-oppa.com/sitemap-index.xml
-
-# Prevent crawling of admin pages if they exist
-User-agent: *
+# Prevent crawling of admin and non-public pages
 Disallow: /admin/
 Disallow: /dashboard/
+Disallow: /draft/
+Disallow: /preview/
+
+# Add crawl delay to prevent server overload
+Crawl-delay: 10
+
+# Specific directives for high-volume crawlers
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+# Sitemap locations
+Sitemap: https://blogsmanhwa-oppa.vercel.app/sitemap.xml
+Sitemap: https://blogsmanhwa-oppa.vercel.app/sitemap-index.xml
+
+# Host directive to specify canonical domain
+Host: blogsmanhwa-oppa.vercel.app

@@ -4,8 +4,18 @@ import Header from '../../components/Header.astro';
 import Footer from '../../components/Footer.astro';
 import FormattedDate from '../../components/FormattedDate.astro';
 import Breadcrumbs from '../../components/Breadcrumbs.astro';
+import MangaSchema from '../../components/MangaSchema.astro';
 import { getTitle, getDescription } from '../../consts';
 import { getBlogPostBySlug, getLatestBlogPosts, getRelatedBlogPosts, getAllBlogPosts } from '../../lib/blogDataService.js';
+
+// Helper function to estimate reading time
+function getReadingTime(content) {
+  const wordsPerMinute = 200;
+  const text = content.replace(/<\/?[^>]+(>|$)/g, '');
+  const wordCount = text.split(/\s+/).length;
+  const readingTime = Math.ceil(wordCount / wordsPerMinute);
+  return readingTime;
+}
 
 // Required for dynamic routes in Astro
 export async function getStaticPaths() {
@@ -34,6 +44,9 @@ const post = await getBlogPostBySlug(slug);
 if (!post) {
   return Astro.redirect('/404');
 }
+
+// Calculate estimated reading time
+const readingTime = getReadingTime(post.content);
 
 // Build breadcrumbs for SEO and display
 const breadcrumbs = [
@@ -64,7 +77,18 @@ const genreNames = post.manga?.genres?.map(g => g.genres.name).filter(Boolean) |
       pageType="article"
       articleSection={post.manga ? 'Manga Review' : 'Blog'}
       breadcrumbs={breadcrumbs}
+      isMangaPage={!!post.manga}
+      manga={post.manga}
     />
+    
+    {/* Add specialized manga schema markup if this post is about a manga */}
+    {post.manga && (
+      <MangaSchema 
+        manga={post.manga} 
+        isReview={true} 
+        postData={post} 
+      />
+    )}
     <style>
       /* Add any page-specific styles here */
       .manga-cover {
@@ -316,22 +340,45 @@ const genreNames = post.manga?.genres?.map(g => g.genres.name).filter(Boolean) |
           <div class="max-w-4xl mx-auto">
             <h1 class="manga-title text-2xl md:text-4xl lg:text-5xl mb-4">{post.title}</h1>
             <div class="flex flex-wrap items-center gap-4 text-sm">
-              <div class="flex items-center">
-                <span class="mr-2 text-gray-400">Published:</span>
+              <div class="flex items-center manga-border px-3 py-1 bg-black/60">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
                 <FormattedDate date={new Date(post.published_date)} />
               </div>
+              
+              <div class="flex items-center manga-border px-3 py-1 bg-black/60">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>{readingTime} min read</span>
+              </div>
+              
               {post.views > 0 && (
-                <div class="flex items-center">
-                  <span class="mr-2 text-gray-400">Views:</span>
-                  <span>{post.views}</span>
+                <div class="flex items-center manga-border px-3 py-1 bg-black/60">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                  <span>{post.views.toLocaleString()}</span>
                 </div>
               )}
+              
               {post.manga && (
-                <a href={`/manga/${post.manga.id}`} class="flex items-center">
-                  <span class="mr-2 text-gray-400">Manga:</span>
-                  <span class="hover:text-red-500 transition-colors">{post.manga.title}</span>
+                <a href={`/manga/${post.manga.id}`} class="flex items-center manga-border px-3 py-1 bg-black/60 hover:bg-red-500/20 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                  </svg>
+                  <span>{post.manga.title}</span>
                 </a>
               )}
+              
+              <button id="share-button" class="flex items-center manga-border px-3 py-1 bg-black/60 hover:bg-red-500/20 transition-colors cursor-pointer">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                </svg>
+                <span>Share</span>
+              </button>
             </div>
           </div>
         </div>
@@ -339,57 +386,252 @@ const genreNames = post.manga?.genres?.map(g => g.genres.name).filter(Boolean) |
 
       <!-- Blog Content -->
       <article class="py-12 px-4">
-        <div class="max-w-4xl mx-auto">
-          {post.manga && (
-            <div class="manga-panel p-6 mb-8 flex flex-col md:flex-row gap-6">
-              <div class="w-full md:w-1/3">
-                <img 
-                  src={post.manga.cover_image || '/manga-placeholder.jpg'} 
-                  alt={post.manga.title} 
-                  class="w-full h-auto manga-cover rounded"
-                />
-              </div>
-              <div class="w-full md:w-2/3">
-                <h3 class="manga-title text-2xl mb-4">{post.manga.title}</h3>
-                <p class="mb-4 text-gray-300 line-clamp-3">{post.manga.description}</p>
+        <div class="max-w-6xl mx-auto">
+          <div class="flex flex-col lg:flex-row gap-8">
+            <!-- Left sidebar with sticky TOC -->
+            <div class="hidden lg:block lg:w-1/4">
+              <div class="sticky top-24 manga-panel p-5 bg-black/40">
+                <h3 class="text-xl font-bold mb-4 border-b border-gray-700 pb-2 flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" />
+                  </svg>
+                  Table of Contents
+                </h3>
+                <nav class="toc text-sm space-y-2" id="table-of-contents">
+                  <!-- TOC will be populated by JS -->
+                  <div class="text-gray-400">Loading...</div>
+                </nav>
                 
-                {genreNames.length > 0 && (
-                  <div class="mb-4">
-                    <p class="text-gray-400 mb-2">Genres:</p>
-                    <div class="flex flex-wrap gap-2">
-                      {genreNames.map(genre => (
-                        <span class="manga-border px-2 py-1 text-sm bg-gray-700">{genre}</span>
-                      ))}
-                    </div>
+                <div class="mt-6 pt-5 border-t border-gray-700">
+                  <h4 class="font-bold mb-3 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Article Info
+                  </h4>
+                  <ul class="space-y-2 text-sm">
+                    <li class="flex items-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>{readingTime} min read</span>
+                    </li>
+                    <li class="flex items-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <FormattedDate date={new Date(post.published_date)} />
+                    </li>
+                    <li class="flex items-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                      <span>{post.views?.toLocaleString() || 0} views</span>
+                    </li>
+                  </ul>
+                </div>
+                
+                <div class="mt-6 pt-4 border-t border-gray-700">
+                  <button id="scroll-to-top" class="flex items-center text-sm hover:text-red-500 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 11l7-7 7 7M5 19l7-7 7 7" />
+                    </svg>
+                    Scroll to top
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Main content area -->
+            <div class="lg:w-3/4">
+              {post.manga && (
+                <div class="manga-panel p-6 mb-8 flex flex-col md:flex-row gap-6">
+                  <div class="w-full md:w-1/3">
+                    <img 
+                      src={post.manga.cover_image || '/manga-placeholder.jpg'} 
+                      alt={post.manga.title} 
+                      class="w-full h-auto manga-cover rounded"
+                    />
                   </div>
-                )}
-                
-                <a 
-                  href={`/manga/${post.manga.id}`} 
-                  class="manga-border inline-block px-4 py-2 text-sm bg-red-500 hover:bg-red-600 transition-colors"
-                >
-                  View Manga
-                </a>
+                  <div class="w-full md:w-2/3">
+                    <h3 class="manga-title text-2xl mb-4">{post.manga.title}</h3>
+                    <p class="mb-4 text-gray-300 line-clamp-3">{post.manga.description}</p>
+                    
+                    {genreNames.length > 0 && (
+                      <div class="mb-4">
+                        <p class="text-gray-400 mb-2">Genres:</p>
+                        <div class="flex flex-wrap gap-2">
+                          {genreNames.map(genre => (
+                            <span class="manga-border px-2 py-1 text-sm bg-gray-700">{genre}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    <a 
+                      href={`/manga/${post.manga.id}`} 
+                      class="manga-border inline-block px-4 py-2 text-sm bg-red-500 hover:bg-red-600 transition-colors"
+                    >
+                      View Manga
+                    </a>
+                  </div>
+                </div>
+              )}
+              
+              <!-- Mobile TOC Dropdown (only visible on mobile) -->
+              <div class="lg:hidden manga-panel p-4 mb-6 bg-black/40">
+                <details class="toc-mobile">
+                  <summary class="flex justify-between items-center cursor-pointer">
+                    <div class="flex items-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" />
+                      </svg>
+                      <span class="font-bold">Table of Contents</span>
+                    </div>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </summary>
+                  <nav class="mt-3 pt-3 border-t border-gray-700 text-sm space-y-2" id="mobile-table-of-contents">
+                    <!-- Mobile TOC will be populated by JS -->
+                    <div class="text-gray-400">Loading...</div>
+                  </nav>
+                </details>
+              </div>
+              
+              <!-- Article content with ID for TOC generation -->
+              <div class="blog-content manga-panel p-6 bg-black/40 prose prose-invert prose-lg max-w-none" id="article-content" set:html={post.content} />
+              
+              <!-- Article footer with keywords and share buttons -->
+              <div class="mt-8 pt-6 border-t border-gray-700 manga-panel p-6 bg-black/40">
+                <div class="flex flex-col md:flex-row md:justify-between md:items-center gap-6">
+                  {post.seo_keywords && (
+                    <div class="md:w-2/3">
+                      <p class="text-gray-400 mb-3 flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                        </svg>
+                        Topic Tags:
+                      </p>
+                      <div class="flex flex-wrap gap-2">
+                        {post.seo_keywords.split(',').map(keyword => (
+                          <a href={`/blog?tag=${encodeURIComponent(keyword.trim())}`} class="manga-border px-2 py-1 text-xs bg-gray-800 hover:bg-red-500/20 transition-colors">
+                            {keyword.trim()}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div class="md:w-1/3 flex justify-end space-x-4">
+                    <a href="#top" class="manga-border px-3 py-2 bg-gray-800 hover:bg-red-500/20 transition-colors text-sm flex items-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 11l7-7 7 7M5 19l7-7 7 7" />
+                      </svg>
+                      Back to top
+                    </a>
+                  </div>
+                </div>
               </div>
             </div>
-          )}
-          
-          <!-- Actual blog content -->
-          <div class="blog-content manga-panel p-6 bg-black/40 prose prose-invert prose-lg max-w-none" set:html={post.content} />
-          
-          <!-- Keywords/Tags -->
-          {post.seo_keywords && (
-            <div class="mt-12 pt-6 border-t border-gray-700">
-              <p class="text-gray-400 mb-3">Keywords:</p>
-              <div class="flex flex-wrap gap-2">
-                {post.seo_keywords.split(',').map(keyword => (
-                  <span class="manga-border px-2 py-1 text-xs bg-gray-800">{keyword.trim()}</span>
-                ))}
-              </div>
-            </div>
-          )}
+          </div>
         </div>
       </article>
+      
+      <script>
+        // Generate table of contents from headings
+        document.addEventListener('DOMContentLoaded', function() {
+          const articleContent = document.getElementById('article-content');
+          const tableOfContents = document.getElementById('table-of-contents');
+          const mobileTOC = document.getElementById('mobile-table-of-contents');
+          const scrollToTopButton = document.getElementById('scroll-to-top');
+          const shareButton = document.getElementById('share-button');
+          
+          if (articleContent && (tableOfContents || mobileTOC)) {
+            const headings = articleContent.querySelectorAll('h1, h2, h3, h4');
+            
+            if (headings.length > 0) {
+              // Clear loading message
+              if (tableOfContents) tableOfContents.innerHTML = '';
+              if (mobileTOC) mobileTOC.innerHTML = '';
+              
+              const tocList = document.createElement('ul');
+              tocList.className = 'space-y-2';
+              
+              headings.forEach((heading, index) => {
+                // Add ID to the heading if it doesn't have one
+                if (!heading.id) {
+                  heading.id = `heading-${index}`;
+                }
+                
+                const listItem = document.createElement('li');
+                const link = document.createElement('a');
+                link.href = `#${heading.id}`;
+                link.textContent = heading.textContent;
+                link.className = 'hover:text-red-500 transition-colors block';
+                
+                // Add indentation based on heading level
+                const headingLevel = parseInt(heading.tagName.charAt(1));
+                if (headingLevel > 1) {
+                  listItem.style.paddingLeft = `${(headingLevel - 1) * 12}px`;
+                }
+                
+                listItem.appendChild(link);
+                tocList.appendChild(listItem);
+              });
+              
+              if (tableOfContents) tableOfContents.appendChild(tocList.cloneNode(true));
+              if (mobileTOC) mobileTOC.appendChild(tocList.cloneNode(true));
+            } else {
+              // No headings found
+              const message = document.createElement('p');
+              message.textContent = 'No sections found in this article.';
+              message.className = 'text-gray-400 text-sm';
+              
+              if (tableOfContents) tableOfContents.innerHTML = '';
+              if (mobileTOC) mobileTOC.innerHTML = '';
+              
+              if (tableOfContents) tableOfContents.appendChild(message.cloneNode(true));
+              if (mobileTOC) mobileTOC.appendChild(message.cloneNode(true));
+            }
+          }
+          
+          // Scroll to top functionality
+          if (scrollToTopButton) {
+            scrollToTopButton.addEventListener('click', function() {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+          }
+          
+          // Web Share API for the share button
+          if (shareButton && navigator.share) {
+            shareButton.addEventListener('click', async () => {
+              try {
+                await navigator.share({
+                  title: document.title,
+                  url: window.location.href
+                });
+              } catch (err) {
+                console.error('Error sharing:', err);
+              }
+            });
+          } else if (shareButton) {
+            // Fallback for browsers that don't support Web Share API
+            shareButton.addEventListener('click', () => {
+              const dummy = document.createElement('input');
+              document.body.appendChild(dummy);
+              dummy.value = window.location.href;
+              dummy.select();
+              document.execCommand('copy');
+              document.body.removeChild(dummy);
+              
+              // Show a small tooltip or notification
+              alert('URL copied to clipboard!');
+            });
+          }
+        });
+      </script>
       
       <!-- Related Posts -->
       {relatedPosts.length > 0 && (

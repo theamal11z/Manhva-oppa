@@ -1,0 +1,89 @@
+---
+// MangaSchema.astro - Structured data component for manga/manhwa content
+interface Props {
+  manga: any;
+  isReview?: boolean;
+  postData?: any;
+}
+
+const { manga, isReview = false, postData = null } = Astro.props;
+
+// Format dates if available
+const publishDate = postData?.published_date 
+  ? new Date(postData.published_date).toISOString() 
+  : new Date().toISOString();
+
+// Generate the appropriate schema based on content type
+let schemaData;
+
+if (isReview && postData) {
+  // Review schema for blog posts about manga
+  schemaData = {
+    "@context": "https://schema.org",
+    "@type": "Review",
+    "itemReviewed": {
+      "@type": "Book",
+      "bookFormat": "GraphicNovel",
+      "name": manga.title,
+      "author": manga.author ? {
+        "@type": "Person",
+        "name": manga.author
+      } : undefined,
+      "image": manga.cover_image,
+      "description": manga.description,
+      "genre": manga.genres?.map(g => g.name).join(", ") || "",
+      "publisher": manga.publisher || undefined,
+      "inLanguage": manga.language || "en"
+    },
+    "reviewRating": {
+      "@type": "Rating",
+      "ratingValue": postData.rating || "4.5",
+      "bestRating": "5",
+      "worstRating": "1"
+    },
+    "author": {
+      "@type": "Person",
+      "name": postData.author || "Manhva-Oppa"
+    },
+    "headline": postData.title,
+    "datePublished": publishDate,
+    "reviewBody": postData.seo_description || postData.title,
+    "mainEntityOfPage": {
+      "@type": "WebPage",
+      "@id": Astro.url.toString()
+    }
+  };
+} else {
+  // Book schema for manga listing pages
+  schemaData = {
+    "@context": "https://schema.org",
+    "@type": "Book",
+    "bookFormat": "GraphicNovel",
+    "name": manga.title,
+    "author": manga.author ? {
+      "@type": "Person", 
+      "name": manga.author
+    } : undefined,
+    "image": manga.cover_image,
+    "description": manga.description || `Read about ${manga.title} manga on Manhva-Oppa Blog`,
+    "genre": manga.genres?.map(g => g.name).join(", ") || "",
+    "publisher": manga.publisher || undefined,
+    "inLanguage": manga.language || "en",
+    "potentialAction": {
+      "@type": "ReadAction",
+      "target": {
+        "@type": "EntryPoint",
+        "urlTemplate": Astro.url.toString()
+      }
+    }
+  };
+}
+
+// Remove undefined values for cleaner JSON
+const cleanSchema = JSON.stringify(schemaData, (key, value) => {
+  return value === undefined ? undefined : value;
+}, 2);
+---
+
+<!-- Structured Data for Manga/Manhwa -->
+<script type="application/ld+json" set:html={cleanSchema}></script>

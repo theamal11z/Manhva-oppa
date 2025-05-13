@@ -5,10 +5,16 @@ import { SITE_TITLE, getTitle } from '../consts';
 const dynamicTitle = await getTitle();
 ---
 
+<!-- No polyfill needed with div-based implementation -->
+
 <header class="fixed top-0 w-full z-40 transition-all duration-300 bg-black/90 backdrop-blur-sm shadow-lg">
+	<!-- Hidden checkbox for mobile menu toggle -->
+	<input type="checkbox" id="nav-toggle" class="hidden" aria-hidden="true">
+	
 	<div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
 		<nav class="flex items-center justify-between h-14 sm:h-16">
 			<a href="/" class="flex items-center manga-border bg-red-500 px-3 py-1 sm:px-4 sm:py-2 transform -rotate-2">
+				<img src="/images/logo.jpg" alt="Manhva-Oppa Logo" class="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover shadow-lg" />
 				<span class="ml-1 sm:ml-2 text-lg sm:text-xl manga-title">{dynamicTitle}</span>
 			</a>
 			
@@ -18,67 +24,178 @@ const dynamicTitle = await getTitle();
 				<HeaderLink href="/discover">Discover</HeaderLink>
 				<HeaderLink href="/about">About</HeaderLink>
 				
-				
 				<!-- Links to main Manga-Oppa site -->
 				<a href="/../../" class="manga-border px-4 py-2 hover:text-red-500 transition-all transform hover:scale-105 hover:-rotate-2 flex items-center gap-2">
 					Main Site
 				</a>
-				
 			</div>
 			
-			<button
-				id="menu-toggle"
-				class="md:hidden manga-border p-3 sm:p-4 transform hover:rotate-3 transition-transform menu-button focus:outline-none"
-				aria-label="Open navigation menu"
-				aria-controls="mobile-menu"
-				aria-expanded="false"
-			>
-
-				<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
-				</svg>
-			</button>
+			<!-- Hamburger Menu Label (acts as the button) -->
+			<label for="nav-toggle" class="md:hidden manga-border p-3 sm:p-4 transform hover:rotate-3 transition-transform menu-button focus:outline-none cursor-pointer">
+				<span class="text-2xl">☰</span>
+			</label>
 		</nav>
 	</div>
 	
-	<!-- Mobile Menu as Dialog -->
-	<dialog id="mobile-menu" class="md:hidden fixed inset-0 bg-black/95 z-50 pt-20 sm:pt-24 mobile-menu p-0 rounded-none border-0 max-w-none w-full h-full overflow-y-auto">
-		<div class="p-4 space-y-4 max-h-screen overflow-y-auto pb-32">
-			<a href="/" class="block manga-panel py-3 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2 text-center text-lg">
-				Home
-			</a>
-			<a href="/blog" class="block manga-panel py-3 px-4 hover:text-red-500 transition-colors transform hover:rotate-2 text-center text-lg">
-				Blog
-			</a>
-			<a href="/discover" class="block manga-panel py-3 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2 text-center text-lg">
-				Discover
-			</a>
+	<!-- Mobile Navigation Overlay (controlled by checkbox) with Manga Theme -->
+	<div class="mobile-nav-overlay">
+		<div class="mobile-nav-content bg-black">
+			<!-- Header with manga border and style -->
+			<div class="manga-header-panel p-4 flex justify-between items-center border-b border-gray-800 relative">
+				<div class="absolute top-0 left-0 w-full h-full screen-tone opacity-10 pointer-events-none"></div>
+				<div class="flex items-center">
+					<img src="/images/logo.jpg" alt="Manhva-Oppa Logo" class="w-8 h-8 rounded-full object-cover shadow-lg mr-2" />
+					<span class="manga-title text-xl text-red-500 transform -rotate-1">NAVIGATION</span>
+				</div>
+				<label for="nav-toggle" class="cursor-pointer manga-border px-3 py-1 transform hover:rotate-3 transition-transform">
+					<span class="text-xl">✕</span>
+				</label>
+			</div>
 			
-			<a href="/about" class="block manga-panel py-3 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2 text-center text-lg">
-				About
-			</a>
-			<!-- Links to main Manga-Oppa site -->
-			<a href="/../../" class="block manga-panel py-3 px-4 hover:text-red-500 transition-colors transform hover:rotate-2 text-center text-lg">
-				Main Site
-			</a>
-			
-			<button 
-				id="close-menu"
-				class="block w-full manga-panel py-4 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2 flex items-center justify-center gap-2 mt-10 text-lg"
-				aria-label="Close navigation menu"
-				type="button"
-			>
-				<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-				</svg>
-				Close
-			</button>
+			<!-- Navigation Links with Manga-style -->
+			<div class="p-6">
+				<div class="space-y-5">
+					<a href="/" class="manga-panel block border border-gray-700 p-5 text-xl text-center transform hover:-rotate-1 transition-transform">
+						<span class="nav-icon">🏠</span>
+						<span class="manga-title block mt-1">Home</span>
+					</a>
+					<a href="/blog" class="manga-panel block border border-gray-700 p-5 text-xl text-center transform hover:rotate-1 transition-transform">
+						<span class="nav-icon">📝</span>
+						<span class="manga-title block mt-1">Blog</span>
+					</a>
+					<a href="/discover" class="manga-panel block border border-gray-700 p-5 text-xl text-center transform hover:-rotate-1 transition-transform">
+						<span class="nav-icon">🔍</span>
+						<span class="manga-title block mt-1">Discover</span>
+					</a>
+					<a href="/about" class="manga-panel block border border-gray-700 p-5 text-xl text-center transform hover:rotate-1 transition-transform">
+						<span class="nav-icon">ℹ️</span>
+						<span class="manga-title block mt-1">About</span>
+					</a>
+					<a href="/../../" class="manga-border block bg-red-500 p-5 text-2xl text-center mt-8 transform hover:scale-[0.98] transition-transform">
+						Visit Main Site <span class="ml-2">→</span>
+					</a>
+				</div>
+			</div>
 		</div>
-	</dialog>
+	</div>
 </header>
 
 <div class="fixed inset-0 screen-tone pointer-events-none"></div>
 
-<script is:inline type="module" client:load>
-  import '/src/scripts/mobile-nav.js';
+<!-- CSS for the mobile navigation using checkbox hack -->
+<style is:global>
+  /* Hide the mobile navigation by default */
+  .mobile-nav-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 0; /* Start with 0 height */
+    overflow: hidden;
+    background-color: rgba(0, 0, 0, 0.98);
+    z-index: 50;
+    transition: height 0.3s ease;
+  }
+  
+  /* Mobile nav content */
+  .mobile-nav-content {
+    height: 100vh;
+    width: 100%;
+    overflow-y: auto;
+    padding-bottom: 60px; /* Extra padding at bottom for better scrolling */
+  }
+  
+  /* When checkbox is checked, show the navigation */
+  #nav-toggle:checked ~ .mobile-nav-overlay {
+    height: 100vh; /* Full height when open */
+  }
+  
+  /* Hide scrollbar when nav is open */
+  #nav-toggle:checked ~ .mobile-nav-overlay + html,
+  #nav-toggle:checked ~ .mobile-nav-overlay + body {
+    overflow: hidden;
+  }
+  
+  /* Media query to hide mobile navigation on larger screens */
+  @media (min-width: 768px) {
+    .mobile-nav-overlay {
+      display: none;
+    }
+  }
+  
+  /* Manga Theme Styles */
+  .manga-header-panel {
+    background-color: rgba(20, 20, 20, 0.95);
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  }
+  
+  /* Manga panel styling for navigation items */
+  .manga-panel {
+    background-color: rgba(30, 30, 30, 0.8);
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+  
+  /* Simulated halftone pattern */
+  .screen-tone {
+    background-image: radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px);
+    background-size: 6px 6px;
+  }
+  
+  /* Navigation icons */
+  .nav-icon {
+    display: block;
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    opacity: 0.9;
+  }
+  
+  /* Special effects for active/hover states */
+  .manga-panel:active,
+  .manga-panel:focus {
+    transform: scale(0.96) !important;
+  }
+</style>
+
+<!-- Add script for keyboard accessibility (escape key to close menu) -->
+<script is:inline>
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      document.getElementById('nav-toggle').checked = false;
+    }
+  });
 </script>
+
+<!-- Additional styles for mobile navigation menu items -->
+<style is:global>
+  /* Enhance mobile menu items with hover effects */
+  .mobile-nav-overlay a {
+    transition: transform 0.2s ease, background-color 0.2s ease;
+  }
+  
+  .mobile-nav-overlay a:hover, 
+  .mobile-nav-overlay a:active {
+    transform: scale(0.98);
+    background-color: rgba(70, 70, 70, 0.8) !important;
+  }
+  
+  /* Add subtle animation to nav items */
+  .mobile-nav-overlay .space-y-4 a {
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .mobile-nav-overlay .space-y-4 a::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, rgba(255,0,0,0.1) 0%, rgba(0,0,0,0) 100%);
+    border-radius: 4px;
+  }
+</style>

@@ -4,12 +4,12 @@ import mdx from '@astrojs/mdx';
 import sitemap from '@astrojs/sitemap';
 import tailwind from '@astrojs/tailwind';
 
-// https://astro.build/config
 export default defineConfig({
-  site: 'https://manga-oppa-blog.com',
+  site: 'https://blogsmanhwa-oppa.vercel.app',
+  output: 'static', // <-- ADD THIS
   integrations: [
     mdx(), 
     sitemap(),
     tailwind()
-  ],
+  ]
 });
