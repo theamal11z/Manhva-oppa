@@ -13,7 +13,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
-import { supabase, updateReadingStatus } from '../lib/supabaseClient';
+import { supabase, updateReadingStatus, logReadingHistory, logAllChaptersRead } from '../lib/supabaseClient';
 import AppStorage from '../lib/AppStorage';
 
 type PageImage = {
@@ -96,6 +96,12 @@ const Reader: React.FC = () => {
         try {
           // When a chapter first loads, mark it as 'reading'
           await updateReadingStatus(user.id, mangaId, 'reading', Number(chapterId));
+          // Also log reading history for this chapter
+          if (pages.length > 0) {
+            // Find the matching chapter UUID from loaded pages
+            const pageChapterId = pages[0].id;
+            await logReadingHistory(user.id, mangaId, pageChapterId);
+          }
           console.log(`Started reading chapter ${chapterId}`);
         } catch (err) {
           console.error('Error updating reading status:', err);
@@ -114,6 +120,11 @@ const Reader: React.FC = () => {
         const markAsCompleted = async () => {
           try {
             await updateReadingStatus(user.id, mangaId, 'reading', Number(chapterId));
+            // Also log reading history for this chapter
+            if (pages.length > 0) {
+              const pageChapterId = pages[0].id;
+              await logReadingHistory(user.id, mangaId, pageChapterId);
+            }
             console.log(`Completed chapter ${chapterId} (reached last page)`);
           } catch (err) {
             console.error('Error marking chapter as completed:', err);
@@ -128,6 +139,11 @@ const Reader: React.FC = () => {
           const updateProgress = async () => {
             try {
               await updateReadingStatus(user.id, mangaId, 'reading', Number(chapterId));
+              // Also log reading history for this chapter
+              if (pages.length > 0) {
+                const pageChapterId = pages[0].id;
+                await logReadingHistory(user.id, mangaId, pageChapterId);
+              }
               console.log(`Updated reading progress: ${currentPage}/${pages.length}`);
             } catch (err) {
               console.error('Error updating reading progress:', err);
@@ -815,6 +831,8 @@ const Reader: React.FC = () => {
                           setCompletedSuccess(null);
                           try {
                             await updateReadingStatus(user.id, mangaId!, 'completed', Number(chapterId));
+                            // Log all chapters up to and including this one as read
+                            await logAllChaptersRead(user.id, mangaId!, Number(chapterId));
                             setCompletedSuccess('Marked as completed!');
                           } catch (err: any) {
                             setCompletedSuccess('Failed to mark as completed');
@@ -851,8 +869,10 @@ const Reader: React.FC = () => {
                             onClick={() => {
                               // Mark current chapter as completed before moving to next chapter
                               if (user && mangaId && chapterId) {
+                                // Update status and log all chapters as read before moving to next
                                 updateReadingStatus(user.id, mangaId, 'completed', Number(chapterId))
-                                  .then(() => console.log(`Marked chapter ${chapterId} as completed`));
+                                  .then(() => logAllChaptersRead(user.id, mangaId, Number(chapterId)))
+                                  .then(() => console.log(`Marked chapter ${chapterId} as completed and logged all chapters as read`));
                               }
                               goToNextChapter();
                             }}

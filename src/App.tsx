@@ -34,6 +34,43 @@ function App() {
   const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
 
+  // Close mobile menu on route change
+  useEffect(() => {
+    setIsMenuOpen(false);
+  }, [location]);
+
+  // Fix for Profile page tabs not being clickable
+  useEffect(() => {
+    if (location.pathname === '/profile') {
+      // Give time for the component to render
+      const timer = setTimeout(() => {
+        // Find all overlays that might be blocking clicks
+        const overlays = document.querySelectorAll('.fixed, .absolute');
+        
+        overlays.forEach(overlay => {
+          // Skip elements that are part of the Profile sidebar
+          if (overlay.closest('.manga-panel') || 
+              overlay.closest('button') || 
+              overlay.closest('a')) {
+            return;
+          }
+          
+          // Check if this overlay is blocking clicks
+          const style = window.getComputedStyle(overlay as Element);
+          if (style.pointerEvents !== 'none' && 
+              style.display !== 'none' && 
+              style.visibility !== 'hidden') {
+            // Make it not block clicks
+            (overlay as HTMLElement).style.pointerEvents = 'none';
+            console.log('Fixed overlay:', overlay);
+          }
+        });
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [location.pathname]);
+
   // Site title for navbar branding
   const [siteTitle, setSiteTitle] = useState('MangaVerse');
   useEffect(() => {

@@ -21,6 +21,8 @@ import {
   removeFromReadingList, 
   removeFromFavorites,
   updateReadingStatus,
+  logReadingHistory,
+  logAllChaptersRead,
   supabase 
 } from '../lib/supabaseClient';
 
@@ -60,124 +62,118 @@ const MyList: React.FC = () => {
     }
   }, [user, authLoading, navigate]);
   
-  useEffect(() => {
-    const fetchUserList = async () => {
-      if (!user) return;
-      
-      try {
-        setLoading(true);
-        setError(null);
-        
-        let response;
-        
-        // Fetch user's reading list or favorites based on active tab
-        if (activeTab === 'reading') {
-          response = await getUserReadingList(user.id);
-        } else {
-          response = await getUserFavorites(user.id);
-        }
-        
-        if (response.error) throw new Error(response.error.message);
-        
-        // Process the data
-        const items = response.data || [];
-        console.log(`Fetched ${items.length} items for ${activeTab} list`);
-        
-        // Get reading history for progress calculation
-        const { data: readingHistory } = await supabase
-          .from('reading_history')
-          .select('manga_id, chapter_id')
-          .eq('user_id', user.id);
-          
-        // Create a map of manga_id to latest chapter read
-        const readingProgress: {[key: string]: {count: number, chapters: Set<string>}} = {};
-        
-        if (readingHistory) {
-          readingHistory.forEach(record => {
-            if (!readingProgress[record.manga_id]) {
-              readingProgress[record.manga_id] = {count: 0, chapters: new Set()};
-            }
-            readingProgress[record.manga_id].chapters.add(record.chapter_id);
-            readingProgress[record.manga_id].count = readingProgress[record.manga_id].chapters.size;
-          });
-        }
-        
-        // Format the data
-        const formattedList = await Promise.all(items.map(async (item: any) => {
-          const mangaId = activeTab === 'reading' ? item.manga_id : item.manga?.id;
-          const manga = item.manga || {};
-          
-          // Get total chapters for progress calculation
-          const { data: chapters } = await supabase
-            .from('chapters')
-            .select('id, chapter_number')
-            .eq('manga_id', mangaId)
-            .order('chapter_number', { ascending: true });
-            
-          const maxChapterNumber = chapters && chapters.length > 0 ? 
-            Math.max(...chapters.map((ch: any) => ch.chapter_number)) : 0;
-          
-          // Get the current chapter from the reading list entry (if in reading list)
-          let currentChapter = item.current_chapter || 1;
-          
-          // If we're in favorites tab, we need to get the current chapter from the reading list
-          if (activeTab === 'favorites') {
-            const { data: readingListEntry } = await supabase
-              .from('user_reading_lists')
-              .select('current_chapter, status')
-              .eq('user_id', user.id)
-              .eq('manga_id', mangaId)
-              .single();
-              
-            if (readingListEntry) {
-              currentChapter = readingListEntry.current_chapter || 1;
-            }
-          }
-          
-          // Determine current reading progress percentage
-          const progress = maxChapterNumber > 0 
-            ? Math.round((currentChapter / maxChapterNumber) * 100) 
-            : 0;
-          
-          // Determine last updated date
-          const lastUpdated = item.updated_at || manga.updated_at || new Date().toISOString();
-          
-          // Get manga genres
-          const { data: genreData } = await supabase
-            .from('manga_genres')
-            .select('genres(name)')
-            .eq('manga_id', mangaId);
-            
-          const genres = genreData?.map((g: any) => g.genres.name) || [];
-          
-          return {
-            id: item.id,
-            title: manga.title || 'Unknown Title',
-            coverImage: manga.cover_image || '',
-            status: item.status || 'reading',
-            progress,
-            current_chapter: currentChapter,
-            total_chapters: maxChapterNumber,
-            rating: manga.rating,
-            lastUpdated,
-            genres,
-            manga_id: mangaId
-          };
-        }));
-        
-        setMangaList(formattedList);
-      } catch (err: any) {
-        console.error(`Error fetching ${activeTab} list:`, err);
-        setError(err.message || `Failed to load your ${activeTab} list`);
-      } finally {
-        setLoading(false);
+  // Move fetchUserList outside useEffect for reusability
+  const fetchUserList = async () => {
+    if (!user) return;
+    try {
+      setLoading(true);
+      setError(null);
+      let response;
+      // Fetch user's reading list or favorites based on active tab
+      if (activeTab === 'reading') {
+        response = await getUserReadingList(user.id);
+      } else {
+        response = await getUserFavorites(user.id);
       }
-    };
-    
+      if (response.error) throw new Error(response.error.message);
+      // Process the data
+      const items = response.data || [];
+      console.log(`Fetched ${items.length} items for ${activeTab} list`);
+      // Get reading history for progress calculation
+      const { data: readingHistory } = await supabase
+        .from('reading_history')
+        .select('manga_id, chapter_id')
+        .eq('user_id', user.id);
+      // Create a map of manga_id to latest chapter read
+      const readingProgress: {[key: string]: {count: number, chapters: Set<string>}} = {};
+      if (readingHistory) {
+        readingHistory.forEach(record => {
+          if (!readingProgress[record.manga_id]) {
+            readingProgress[record.manga_id] = {count: 0, chapters: new Set()};
+          }
+          readingProgress[record.manga_id].chapters.add(record.chapter_id);
+          readingProgress[record.manga_id].count = readingProgress[record.manga_id].chapters.size;
+        });
+      }
+      // Format the data
+      const formattedList = await Promise.all(items.map(async (item: any) => {
+        const mangaId = activeTab === 'reading' ? item.manga_id : item.manga?.id;
+        const manga = item.manga || {};
+        // Get total chapters for progress calculation
+        const { data: chapters } = await supabase
+          .from('chapters')
+          .select('id, chapter_number')
+          .eq('manga_id', mangaId)
+          .order('chapter_number', { ascending: true });
+        const maxChapterNumber = chapters && chapters.length > 0 ? 
+          Math.max(...chapters.map((ch: any) => ch.chapter_number)) : 0;
+        // Get the current chapter from the reading list entry (if in reading list)
+        let currentChapter = item.current_chapter || 1;
+        // If we're in favorites tab, we need to get the current chapter from the reading list
+        if (activeTab === 'favorites') {
+          const { data: readingListEntry } = await supabase
+            .from('user_reading_lists')
+            .select('current_chapter, status')
+            .eq('user_id', user.id)
+            .eq('manga_id', mangaId)
+            .single();
+          if (readingListEntry) {
+            currentChapter = readingListEntry.current_chapter || 1;
+          }
+        }
+        // Determine current reading progress percentage
+        const progress = maxChapterNumber > 0 
+          ? Math.round((currentChapter / maxChapterNumber) * 100) 
+          : 0;
+        // Determine last updated date
+        const lastUpdated = item.updated_at || manga.updated_at || new Date().toISOString();
+        // Get manga genres
+        const { data: genreData } = await supabase
+          .from('manga_genres')
+          .select('genres(name)')
+          .eq('manga_id', mangaId);
+        const genres = genreData?.map((g: any) => g.genres.name) || [];
+        return {
+          id: item.id,
+          title: manga.title || 'Unknown Title',
+          coverImage: manga.cover_image || '',
+          status: item.status || 'reading',
+          progress,
+          current_chapter: currentChapter,
+          total_chapters: maxChapterNumber,
+          rating: manga.rating,
+          lastUpdated,
+          genres,
+          manga_id: mangaId
+        };
+      }));
+      setMangaList(formattedList);
+    } catch (err: any) {
+      console.error(`Error fetching ${activeTab} list:`, err);
+      setError(err.message || `Failed to load your ${activeTab} list`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchUserList();
   }, [user, activeTab]);
   
-  const filteredList = mangaList.filter(manga => {
+  // Defensive: if all chapters are read, show 'completed' in the UI even if status is still 'reading'
+  const mappedMangaList = mangaList.map(manga => {
+    if (
+      manga.status === 'reading' &&
+      manga.progress === 100 &&
+      manga.total_chapters && manga.current_chapter &&
+      manga.current_chapter === manga.total_chapters
+    ) {
+      return { ...manga, status: 'completed' };
+    }
+    return manga;
+  });
+
+  const filteredList = mappedMangaList.filter(manga => {
     if (selectedStatus === 'all') return true;
     return manga.status === selectedStatus;
   });
@@ -225,30 +221,50 @@ const MyList: React.FC = () => {
   // Handle updating reading status
   const handleStatusUpdate = async (mangaId: string, newStatus: ReadingStatus) => {
     if (!user) return;
-    
     try {
       setActionLoading(prev => ({ ...prev, [mangaId]: true }));
-      
-      // Find the current manga to get its current chapter
-      const currentManga = mangaList.find(manga => manga.manga_id === mangaId);
-      const currentChapter = currentManga?.current_chapter || 1;
-      
+      let currentChapter = 1;
+      // For 'completed', fetch the last chapter number for this manga
+      if (newStatus === 'completed') {
+        const { data: chapters, error: chapterError } = await supabase
+          .from('chapters')
+          .select('chapter_number')
+          .eq('manga_id', mangaId);
+        if (chapterError) throw new Error(chapterError.message);
+        if (chapters && chapters.length > 0) {
+          currentChapter = Math.max(...chapters.map((ch: any) => ch.chapter_number));
+        }
+      } else {
+        // For other statuses, use the current chapter from the list
+        const currentManga = mangaList.find(manga => manga.manga_id === mangaId);
+        currentChapter = currentManga?.current_chapter || 1;
+      }
       // Update in database
       const { error } = await updateReadingStatus(
-        user.id, 
-        mangaId, 
-        newStatus, 
+        user.id,
+        mangaId,
+        newStatus,
         currentChapter
       );
-      
+      // Also update reading_history accordingly
+      if (newStatus === 'completed') {
+        await logAllChaptersRead(user.id, mangaId, currentChapter);
+      } else if (newStatus === 'reading') {
+        // Log the current chapter as read
+        const { data: chapters } = await supabase
+          .from('chapters')
+          .select('id, chapter_number')
+          .eq('manga_id', mangaId);
+        if (chapters) {
+          const chapterObj = chapters.find((ch: any) => ch.chapter_number === currentChapter);
+          if (chapterObj) {
+            await logReadingHistory(user.id, mangaId, chapterObj.id);
+          }
+        }
+      }
       if (error) throw new Error(error.message);
-      
-      // Update local state
-      setMangaList(prev => 
-        prev.map(manga => 
-          manga.manga_id === mangaId ? { ...manga, status: newStatus } : manga
-        )
-      );
+      // Re-fetch user list to ensure UI is in sync
+      await fetchUserList();
     } catch (err: any) {
       console.error('Error updating status:', err);
       // Could show error toast here

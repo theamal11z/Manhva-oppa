@@ -147,6 +147,36 @@ export const updateReadingStatus = async (userId: string, mangaId: string, statu
   return supabase.from('user_reading_lists').upsert(updateData);
 };
 
+// Utility: Log a single chapter as read in reading_history
+export const logReadingHistory = async (userId: string, mangaId: string, chapterId: string) => {
+  return supabase.from('reading_history').upsert({
+    user_id: userId,
+    manga_id: mangaId,
+    chapter_id: chapterId,
+    read_at: new Date().toISOString()
+  });
+};
+
+// Utility: Log all chapters up to a certain chapter as read (for completion)
+export const logAllChaptersRead = async (userId: string, mangaId: string, upToChapter: number) => {
+  const { data: chapters } = await supabase
+    .from('chapters')
+    .select('id, chapter_number')
+    .eq('manga_id', mangaId)
+    .lte('chapter_number', upToChapter);
+  if (chapters) {
+    const entries = chapters.map((ch: any) => ({
+      user_id: userId,
+      manga_id: mangaId,
+      chapter_id: ch.id,
+      read_at: new Date().toISOString()
+    }));
+    if (entries.length > 0) {
+      await supabase.from('reading_history').upsert(entries);
+    }
+  }
+};
+
 // Admin helpers
 export const addMangaEntry = async (mangaData: any) => {
   // Separate genres and tags from the manga data

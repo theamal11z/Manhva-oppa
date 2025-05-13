@@ -276,7 +276,7 @@ const Profile: React.FC = () => {
         
         <div className="flex flex-col md:flex-row gap-8">
           {/* Sidebar */}
-          <div className="w-full md:w-64 shrink-0 space-y-4">
+          <div className="w-full md:w-64 shrink-0 space-y-4" style={{ position: 'relative', zIndex: 50 }}>
             {/* User card */}
             <div className="manga-panel p-6 bg-black/30 text-center">
               <div className="relative w-32 h-32 mx-auto overflow-hidden rounded-full mb-4">
@@ -309,10 +309,11 @@ const Profile: React.FC = () => {
             </div>
             
             {/* Nav tabs */}
-            <div className="manga-panel bg-black/20 overflow-hidden">
+            <div className="manga-panel bg-black/20 overflow-hidden" style={{ position: 'relative', zIndex: 100 }}>
               <button
                 onClick={() => setActiveTab('profile')}
                 className={`flex items-center gap-3 w-full p-4 text-left ${activeTab === 'profile' ? 'bg-black/40' : 'hover:bg-black/30'} transition-colors`}
+                style={{ pointerEvents: 'auto' }}
               >
                 <User className="w-5 h-5" />
                 Profile
@@ -321,6 +322,7 @@ const Profile: React.FC = () => {
               <button
                 onClick={() => setActiveTab('preferences')}
                 className={`flex items-center gap-3 w-full p-4 text-left ${activeTab === 'preferences' ? 'bg-black/40' : 'hover:bg-black/30'} transition-colors`}
+                style={{ pointerEvents: 'auto' }}
               >
                 <Settings className="w-5 h-5" />
                 Preferences
@@ -329,6 +331,7 @@ const Profile: React.FC = () => {
               <button
                 onClick={() => setActiveTab('history')}
                 className={`flex items-center gap-3 w-full p-4 text-left ${activeTab === 'history' ? 'bg-black/40' : 'hover:bg-black/30'} transition-colors`}
+                style={{ pointerEvents: 'auto' }}
               >
                 <History className="w-5 h-5" />
                 Reading History
@@ -352,7 +355,7 @@ const Profile: React.FC = () => {
           </div>
           
           {/* Main content area */}
-          <div className="flex-1 manga-panel p-6 bg-black/20">
+          <div className="flex-1 manga-panel p-6 bg-black/20" style={{ position: 'relative' }}>
             {/* Profile tab */}
             {activeTab === 'profile' && (
               <div>
@@ -451,6 +454,40 @@ const Profile: React.FC = () => {
               <div>
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="manga-title text-2xl transform -rotate-1">Reading Preferences</h2>
+                </div>
+
+                {/* Preferences summary card */}
+                <div className="manga-panel p-4 bg-black/30 mb-8">
+                  <h3 className="font-medium text-lg mb-3 flex items-center gap-2">
+                    <Settings className="w-5 h-5" />
+                    Your Current Preferences
+                  </h3>
+                  <div className="flex flex-wrap gap-6">
+                    <div>
+                      <span className="text-sm font-semibold">Favorite Genres: </span>
+                      {preferences.favoriteGenres.length > 0 ? (
+                        <span className="text-green-400">{preferences.favoriteGenres.join(', ')}</span>
+                      ) : (
+                        <span className="text-gray-400">None selected</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-sm font-semibold">Genres to Avoid: </span>
+                      {preferences.excludeGenres.length > 0 ? (
+                        <span className="text-red-400">{preferences.excludeGenres.join(', ')}</span>
+                      ) : (
+                        <span className="text-gray-400">None selected</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-sm font-semibold">Reading Direction: </span>
+                      <span className="text-blue-400">{preferences.readingDirection === 'rtl' ? 'Right to Left (Manga)' : 'Left to Right (Comic)'}</span>
+                    </div>
+                    <div>
+                      <span className="text-sm font-semibold">Dark Mode: </span>
+                      <span className="text-purple-400">{preferences.darkMode ? 'On' : 'Off'}</span>
+                    </div>
+                  </div>
                 </div>
                 
                 <div className="space-y-8">

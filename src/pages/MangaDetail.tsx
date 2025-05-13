@@ -21,6 +21,8 @@ import {
   addToFavorites, 
   getChaptersByMangaId,
   updateReadingStatus,
+  logReadingHistory,
+  logAllChaptersRead,
   supabase
 } from '../lib/supabaseClient';
 
@@ -219,6 +221,16 @@ const MangaDetail: React.FC = () => {
       }
       
       await updateReadingStatus(user.id, id, status, currentChapter);
+      // Log reading history accordingly
+      if (status === 'completed') {
+        await logAllChaptersRead(user.id, id, currentChapter);
+      } else if (status === 'reading') {
+        // Log the current chapter as read
+        const chapterObj = chapters.find(ch => ch.chapter_number === currentChapter);
+        if (chapterObj) {
+          await logReadingHistory(user.id, id, chapterObj.id);
+        }
+      }
       setInReadingList(true);
       setUserStatus(status);
       setUserChapter(currentChapter);
@@ -380,6 +392,15 @@ const MangaDetail: React.FC = () => {
                   setStatusSuccess(null);
                   try {
                     await updateReadingStatus(user.id, manga.id, e.target.value as 'reading' | 'completed' | 'on_hold' | 'dropped' | 'plan_to_read', userChapter || undefined);
+                    // Log reading history accordingly
+                    if (e.target.value === 'completed') {
+                      await logAllChaptersRead(user.id, manga.id, userChapter || chapters.length);
+                    } else if (e.target.value === 'reading' && userChapter) {
+                      const chapterObj = chapters.find(ch => ch.chapter_number === userChapter);
+                      if (chapterObj) {
+                        await logReadingHistory(user.id, manga.id, chapterObj.id);
+                      }
+                    }
                     setUserStatus(e.target.value);
                     setStatusSuccess('Status updated!');
                   } catch {
@@ -412,6 +433,11 @@ const MangaDetail: React.FC = () => {
                     setStatusSuccess(null);
                     try {
                       await updateReadingStatus(user.id, manga.id, (userStatus || 'reading') as 'reading' | 'completed' | 'on_hold' | 'dropped' | 'plan_to_read', chapterNum);
+                      // Log reading history for the selected chapter
+                      const chapterObj = chapters.find(ch => ch.chapter_number === chapterNum);
+                      if (chapterObj) {
+                        await logReadingHistory(user.id, manga.id, chapterObj.id);
+                      }
                       setUserChapter(chapterNum);
                       setStatusSuccess('Progress updated!');
                     } catch {
