@@ -42,48 +42,51 @@ function App() {
   // Fix for Profile page tabs not being clickable
   useEffect(() => {
     if (location.pathname === '/profile') {
-      // Create a style element with aggressive CSS fixes
+      // Create a style element with targeted CSS fixes
       const styleEl = document.createElement('style');
       styleEl.id = 'profile-fix-styles';
       styleEl.textContent = `
-        /* Make sure the profile container is above other elements */
+        /* Profile page container */
         .pt-20.pb-16 { 
-          position: relative !important; 
-          z-index: 100 !important; 
+          position: relative;
+          z-index: 1;
         }
         
-        /* Ensure the sidebar has proper stacking and pointer events */
-        .md\:w-64 { 
-          position: relative !important; 
-          z-index: 110 !important; 
-          pointer-events: auto !important;
+        /* Main content wrapper */
+        .flex.flex-col.md\\:flex-row.gap-8 {
+          position: relative;
+          z-index: 2;
         }
         
-        /* Force all clickable elements in the sidebar to receive pointer events */
-        .md\:w-64 div[onClick], 
-        .md\:w-64 button,
-        .md\:w-64 a { 
-          position: relative !important; 
-          z-index: 120 !important; 
-          pointer-events: auto !important;
-          cursor: pointer !important;
+        /* Sidebar container */
+        .w-full.md\\:w-64 { 
+          position: relative;
+          z-index: 3;
         }
         
-        /* Make sure navigation doesn't interfere with profile tabs */
-        nav.fixed { 
-          pointer-events: auto !important;
+        /* Navigation buttons */
+        .manga-panel.bg-black\\/20 button {
+          position: relative;
+          z-index: 4;
+          cursor: pointer;
         }
-        nav.fixed ~ * {
-          position: relative !important;
+        
+        /* Make sure the main content area doesn't overlap */
+        .flex-1.manga-panel {
+          position: relative;
+          z-index: 2;
+        }
+        
+        /* Ensure navigation doesn't interfere */
+        nav.fixed {
+          z-index: 50;
         }
       `;
       
       // Add the style element to the head
       document.head.appendChild(styleEl);
       
-      console.log('Applied aggressive CSS fixes for Profile page');
-      
-      // Clean up function to remove the style element when leaving the profile page
+      // Clean up function
       return () => {
         const existingStyle = document.getElementById('profile-fix-styles');
         if (existingStyle) {
@@ -242,7 +245,11 @@ function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <Link to="/" className="flex items-center manga-border bg-red-500 px-4 py-2 transform -rotate-2">
-              <BookOpen className="w-8 h-8 text-white" />
+              <img 
+                src="/images/logo.jpg" 
+                alt="Manhva-oppa Logo" 
+                className="w-8 h-8 rounded-full object-cover shadow-lg" 
+              />
               <span className="ml-2 text-xl manga-title">{siteTitle}</span>
             </Link>
             
@@ -321,75 +328,93 @@ function App() {
       {/* Mobile Menu */}
       {isMenuOpen && (
         <div className="md:hidden fixed inset-0 bg-black/95 z-40 pt-16 mobile-menu">
-          <div className="p-4 space-y-4">
-            <Link 
-              to="/discover" 
-              className="block manga-panel py-2 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2"
-            >
-              Discover
-            </Link>
-            
-            {user ? (
-              <>
-                <Link 
-                  to="/my-list" 
-                  className="block manga-panel py-2 px-4 hover:text-red-500 transition-colors transform hover:rotate-2"
-                >
-                  My List
-                </Link>
-                
-                <Link 
-                  to="/profile" 
-                  className="block manga-panel py-2 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2"
-                >
-                  Profile
-                </Link>
-                {isAdmin && (
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center">
+                <img 
+                  src="/images/logo.jpg" 
+                  alt="Manhva-oppa Logo" 
+                  className="w-10 h-10 rounded-full object-cover shadow-lg" 
+                />
+                <span className="ml-3 text-2xl manga-title">{siteTitle}</span>
+              </div>
+              <button
+                onClick={() => setIsMenuOpen(false)}
+                className="manga-border p-2 transform hover:-rotate-3 transition-transform"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <Link 
+                to="/discover" 
+                className="block manga-panel py-2 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2"
+              >
+                Discover
+              </Link>
+              
+              {user ? (
+                <>
                   <Link 
-                    to="/admin" 
+                    to="/my-list" 
+                    className="block manga-panel py-2 px-4 hover:text-red-500 transition-colors transform hover:rotate-2"
+                  >
+                    My List
+                  </Link>
+                  
+                  <Link 
+                    to="/profile" 
                     className="block manga-panel py-2 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2"
                   >
-                    Admin Panel
+                    Profile
                   </Link>
-                )}
-              </>
-            ) : (
-              <>
-                <Link 
-                  to="/login" 
-                  className="block manga-panel py-2 px-4 hover:text-red-500 transition-colors transform hover:rotate-2"
-                >
-                  Login
-                </Link>
-                
-                <Link 
-                  to="/signup" 
-                  className="block manga-panel py-2 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2"
-                >
-                  Signup
-                </Link>
-              </>
-            )}
-            
-            <button 
-              onClick={() => {
-                setShowFilters(true);
-                setIsMenuOpen(false);
-              }}
-              className="block w-full text-left manga-panel py-2 px-4 hover:text-red-500 transition-colors transform hover:rotate-2"
-            >
-              Filters
-            </button>
-
-            {user && (
+                  {isAdmin && (
+                    <Link 
+                      to="/admin" 
+                      className="block manga-panel py-2 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2"
+                    >
+                      Admin Panel
+                    </Link>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Link 
+                    to="/login" 
+                    className="block manga-panel py-2 px-4 hover:text-red-500 transition-colors transform hover:rotate-2"
+                  >
+                    Login
+                  </Link>
+                  
+                  <Link 
+                    to="/signup" 
+                    className="block manga-panel py-2 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2"
+                  >
+                    Signup
+                  </Link>
+                </>
+              )}
+              
               <button 
-                onClick={handleLogout}
-                className="block w-full text-left manga-panel py-2 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2 flex items-center gap-2"
+                onClick={() => {
+                  setShowFilters(true);
+                  setIsMenuOpen(false);
+                }}
+                className="block w-full text-left manga-panel py-2 px-4 hover:text-red-500 transition-colors transform hover:rotate-2"
               >
-                <LogOut className="w-5 h-5" />
-                Logout
+                Filters
               </button>
-            )}
+
+              {user && (
+                <button 
+                  onClick={handleLogout}
+                  className="block w-full text-left manga-panel py-2 px-4 hover:text-red-500 transition-colors transform hover:-rotate-2 flex items-center gap-2"
+                >
+                  <LogOut className="w-5 h-5" />
+                  Logout
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

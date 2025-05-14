@@ -25,31 +25,47 @@ import {
   logAllChaptersRead,
   supabase 
 } from '../lib/supabaseClient';
+import { getDetailedReadingStatus, type ReadingStatus } from '../lib/readingStatusManager';
 
-type ReadingStatus = 'reading' | 'completed' | 'on_hold' | 'dropped' | 'plan_to_read';
-
-type MangaItem = {
-  id: string;
-  title: string;
-  coverImage: string;
-  status: ReadingStatus;
-  progress: number;
-  current_chapter?: number;
-  total_chapters?: number;
-  rating?: number;
-  lastUpdated: string;
-  genres: string[];
-  manga_id?: string;
+// Add this type for better progress tracking
+type MangaProgress = {
+  chaptersRead: number;
+  totalChapters: number;
+  lastReadChapter: number | null;
+  lastReadAt: string | null;
+  readChapters: number[];
 };
 
+// Update the manga list item type
+type MangaListItem = {
+  id: string;
+  manga_id: string;
+  status: ReadingStatus;
+  current_chapter: number;
+  updated_at: string;
+  manga: {
+    title: string;
+    cover_image: string;
+    total_chapters: number;
+  };
+  progress: MangaProgress;
+};
 
+// Define the status options array at the top level with explicit typing
+const STATUS_OPTIONS: ReadingStatus[] = [
+  'reading',
+  'completed',
+  'on_hold',
+  'dropped',
+  'plan_to_read'
+];
 
 const MyList: React.FC = () => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'reading' | 'favorites'>('reading');
   const [selectedStatus, setSelectedStatus] = useState<ReadingStatus | 'all'>('all');
-  const [mangaList, setMangaList] = useState<MangaItem[]>([]);
+  const [mangaList, setMangaList] = useState<MangaListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -69,88 +85,47 @@ const MyList: React.FC = () => {
       setLoading(true);
       setError(null);
       let response;
+      
       // Fetch user's reading list or favorites based on active tab
       if (activeTab === 'reading') {
         response = await getUserReadingList(user.id);
       } else {
         response = await getUserFavorites(user.id);
       }
+      
       if (response.error) throw new Error(response.error.message);
+      
       // Process the data
       const items = response.data || [];
       console.log(`Fetched ${items.length} items for ${activeTab} list`);
-      // Get reading history for progress calculation
-      const { data: readingHistory } = await supabase
-        .from('reading_history')
-        .select('manga_id, chapter_id')
-        .eq('user_id', user.id);
-      // Create a map of manga_id to latest chapter read
-      const readingProgress: {[key: string]: {count: number, chapters: Set<string>}} = {};
-      if (readingHistory) {
-        readingHistory.forEach(record => {
-          if (!readingProgress[record.manga_id]) {
-            readingProgress[record.manga_id] = {count: 0, chapters: new Set()};
-          }
-          readingProgress[record.manga_id].chapters.add(record.chapter_id);
-          readingProgress[record.manga_id].count = readingProgress[record.manga_id].chapters.size;
-        });
-      }
-      // Format the data
+      
+      // Format the data with detailed progress information
       const formattedList = await Promise.all(items.map(async (item: any) => {
         const mangaId = activeTab === 'reading' ? item.manga_id : item.manga?.id;
         const manga = item.manga || {};
-        // Get total chapters for progress calculation
-        const { data: chapters } = await supabase
-          .from('chapters')
-          .select('id, chapter_number')
-          .eq('manga_id', mangaId)
-          .order('chapter_number', { ascending: true });
-        const maxChapterNumber = chapters && chapters.length > 0 ? 
-          Math.max(...chapters.map((ch: any) => ch.chapter_number)) : 0;
-        // Get the current chapter from the reading list entry (if in reading list)
-        let currentChapter = item.current_chapter || 1;
-        // If we're in favorites tab, we need to get the current chapter from the reading list
-        if (activeTab === 'favorites') {
-          const { data: readingListEntry } = await supabase
-            .from('user_reading_lists')
-            .select('current_chapter, status')
-            .eq('user_id', user.id)
-            .eq('manga_id', mangaId)
-            .single();
-          if (readingListEntry) {
-            currentChapter = readingListEntry.current_chapter || 1;
-          }
-        }
-        // Determine current reading progress percentage
-        const progress = maxChapterNumber > 0 
-          ? Math.round((currentChapter / maxChapterNumber) * 100) 
-          : 0;
-        // Determine last updated date
-        const lastUpdated = item.updated_at || manga.updated_at || new Date().toISOString();
-        // Get manga genres
-        const { data: genreData } = await supabase
-          .from('manga_genres')
-          .select('genres(name)')
-          .eq('manga_id', mangaId);
-        const genres = genreData?.map((g: any) => g.genres.name) || [];
+        
+        // Get detailed reading status including progress
+        const { status, currentChapter, progress } = await getDetailedReadingStatus(user.id, mangaId);
+        
         return {
           id: item.id,
-          title: manga.title || 'Unknown Title',
-          coverImage: manga.cover_image || '',
-          status: item.status || 'reading',
-          progress,
-          current_chapter: currentChapter,
-          total_chapters: maxChapterNumber,
-          rating: manga.rating,
-          lastUpdated,
-          genres,
-          manga_id: mangaId
+          manga_id: mangaId,
+          status: status || item.status,
+          current_chapter: currentChapter || item.current_chapter || 1,
+          updated_at: item.updated_at || new Date().toISOString(),
+          manga: {
+            title: manga.title || 'Unknown Title',
+            cover_image: manga.cover_image || '',
+            total_chapters: progress.totalChapters || 0
+          },
+          progress: progress
         };
       }));
+      
       setMangaList(formattedList);
-    } catch (err: any) {
-      console.error(`Error fetching ${activeTab} list:`, err);
-      setError(err.message || `Failed to load your ${activeTab} list`);
+    } catch (err) {
+      console.error('Error fetching user list:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load your list');
     } finally {
       setLoading(false);
     }
@@ -164,9 +139,8 @@ const MyList: React.FC = () => {
   const mappedMangaList = mangaList.map(manga => {
     if (
       manga.status === 'reading' &&
-      manga.progress === 100 &&
-      manga.total_chapters && manga.current_chapter &&
-      manga.current_chapter === manga.total_chapters
+      manga.progress.totalChapters > 0 &&
+      manga.progress.chaptersRead === manga.progress.totalChapters
     ) {
       return { ...manga, status: 'completed' };
     }
@@ -361,12 +335,12 @@ const MyList: React.FC = () => {
                 All
                 <span className="ml-1 text-xs">{mangaList.length}</span>
               </button>
-              {['reading', 'completed', 'on_hold', 'dropped', 'plan_to_read'].map((status) => {
+              {STATUS_OPTIONS.map((status) => {
                 const count = mangaList.filter(m => m.status === status).length;
                 return (
                   <button
                     key={status}
-                    onClick={() => setSelectedStatus(status as ReadingStatus)}
+                    onClick={() => setSelectedStatus(status)}
                     className={`manga-border px-3 py-1 text-sm ${selectedStatus === status ? 'bg-red-500/30' : 'bg-black/30'} ${count === 0 ? 'opacity-50' : ''} transition-colors`}
                     disabled={count === 0}
                   >
@@ -414,60 +388,71 @@ const MyList: React.FC = () => {
               >
                 <Link to={`/manga/${manga.manga_id || manga.id}`} className="shrink-0 w-16 h-24 overflow-hidden manga-border">
                   <img 
-                    src={manga.coverImage} 
-                    alt={manga.title}
+                    src={manga.manga.cover_image} 
+                    alt={manga.manga.title}
                     className="w-full h-full object-cover"
                   />
                 </Link>
                 
                 <div className="flex-1 min-w-0">
                   <Link to={`/manga/${manga.manga_id || manga.id}`} className="block">
-                    <h3 className="manga-title text-lg truncate">{manga.title}</h3>
+                    <h3 className="manga-title text-lg truncate">{manga.manga.title}</h3>
                   </Link>
                   
                   <div className="flex flex-wrap items-center gap-2 mt-1">
                     <span className={`inline-flex items-center gap-1 text-sm ${getStatusColor(manga.status)}`}>
-  {getStatusIcon(manga.status)}
-  <span className="capitalize">{manga.status.replace('_', ' ')}</span>
-</span>
+                      {getStatusIcon(manga.status)}
+                      <span className="capitalize">{manga.status.replace('_', ' ')}</span>
+                    </span>
                     
-                    {manga.rating && (
+                    {manga.progress && (
                       <span className="inline-flex items-center gap-1 text-sm">
                         <Star className="w-4 h-4 text-yellow-500" />
-                        {manga.rating}
+                        {Math.round((manga.progress.chaptersRead / manga.progress.totalChapters) * 100)}%
                       </span>
                     )}
                     
                     <span className="text-sm text-gray-400">
-                      {new Date(manga.lastUpdated).toLocaleDateString()}
+                      {new Date(manga.updated_at).toLocaleDateString()}
                     </span>
                   </div>
                   
-                  <div className="mt-2">
-  <div className="flex justify-between text-xs text-gray-400 mb-1">
-    <span>
-      {manga.current_chapter || 0} / {manga.total_chapters || '?'} chapters
-    </span>
-    <span>{manga.progress}%</span>
-  </div>
-  <div className="w-full bg-gray-700 h-1.5 rounded-full overflow-hidden">
-    <div 
-      className="bg-red-500 h-full transition-all duration-500" 
-      style={{ width: `${manga.progress}%` }}
-    ></div>
-  </div>
-  <div className="flex justify-end mt-1">
-    {manga.status === 'reading' && manga.current_chapter && manga.current_chapter > 0 && (
-      <Link 
-        to={`/reader/${manga.manga_id || manga.id}/chapter/${manga.current_chapter}`} 
-        className="text-xs text-red-500 hover:text-red-400 transition-colors flex items-center gap-1"
-      >
-        <Play className="w-3 h-3" />
-        Continue Chapter {manga.current_chapter}
-      </Link>
-    )}
-  </div>
-</div>
+                  {manga.progress && (
+                    <div className="mt-2">
+                      <div className="flex justify-between text-xs text-gray-400 mb-1">
+                        <span>
+                          {manga.progress.chaptersRead} / {manga.progress.totalChapters} chapters read
+                        </span>
+                        <span>{Math.round((manga.progress.chaptersRead / manga.progress.totalChapters) * 100)}%</span>
+                      </div>
+                      <div className="w-full bg-gray-700 h-1.5 rounded-full overflow-hidden">
+                        <div 
+                          className="bg-red-500 h-full transition-all duration-500" 
+                          style={{ 
+                            width: `${manga.progress.totalChapters > 0 
+                              ? (manga.progress.chaptersRead / manga.progress.totalChapters) * 100 
+                              : 0}%` 
+                          }}
+                        ></div>
+                      </div>
+                      <div className="flex justify-between mt-1 text-xs">
+                        <span className="text-gray-400">
+                          {manga.progress.lastReadAt 
+                            ? `Last read: ${new Date(manga.progress.lastReadAt).toLocaleDateString()}`
+                            : 'Not started yet'}
+                        </span>
+                        {manga.status === 'reading' && manga.current_chapter && manga.current_chapter > 0 && (
+                          <Link 
+                            to={`/reader/${manga.manga_id}/chapter/${manga.current_chapter}`} 
+                            className="text-red-500 hover:text-red-400 transition-colors flex items-center gap-1"
+                          >
+                            <Play className="w-3 h-3" />
+                            Continue Chapter {manga.current_chapter}
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
                 
                 <div className="shrink-0 ml-4 flex flex-col gap-2">
@@ -481,15 +466,15 @@ const MyList: React.FC = () => {
                       </button>
                       
                       <div className="absolute right-full top-0 mr-2 bg-black/80 manga-border p-2 hidden group-hover:block z-10 w-36">
-                        {['reading', 'completed', 'on_hold', 'dropped', 'plan_to_read']
+                        {STATUS_OPTIONS
                           .filter(status => status !== manga.status)
                           .map(status => (
                             <button
                               key={status}
-                              onClick={() => handleStatusUpdate(manga.manga_id || manga.id, status as ReadingStatus)}
-                              className={`w-full text-left px-2 py-1 text-sm hover:bg-white/10 flex items-center gap-2 ${getStatusColor(status as ReadingStatus)}`}
+                              onClick={() => handleStatusUpdate(manga.manga_id || manga.id, status)}
+                              className={`w-full text-left px-2 py-1 text-sm hover:bg-white/10 flex items-center gap-2 ${getStatusColor(status)}`}
                             >
-                              {getStatusIcon(status as ReadingStatus)}
+                              {getStatusIcon(status)}
                               <span className="capitalize">{status.replace('_', ' ')}</span>
                             </button>
                           ))}

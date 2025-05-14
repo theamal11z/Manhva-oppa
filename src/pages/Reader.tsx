@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ChevronLeft,
+  ChevronRight,
   Home,
   List,
   Maximize,
@@ -15,17 +16,65 @@ import {
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { supabase, updateReadingStatus, logReadingHistory, logAllChaptersRead } from '../lib/supabaseClient';
 import AppStorage from '../lib/AppStorage';
+import { useAuth } from '../lib/AuthContext';
 
 type PageImage = {
   id: string;
-  url: string;
-  number: number;
+  chapter_id: string;
+  page_number: number;
+  image_url: string;
 };
 
 // Component to display images with loading/error states
 const PageImageViewer: React.FC<{ page: PageImage; darkMode: boolean }> = ({ page, darkMode }) => {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
+  const [imageUrl, setImageUrl] = useState<string>('');
+
+  useEffect(() => {
+    const resolveImageUrl = async () => {
+      try {
+        // If it's already a full URL, use it directly
+        if (page.image_url.startsWith('http')) {
+          setImageUrl(page.image_url);
+          return;
+        }
+
+        // If it's a Supabase storage URL, get the public URL
+        if (page.image_url.startsWith('manga_pages/')) {
+          const { data } = supabase.storage
+            .from('manga_pages')
+            .getPublicUrl(page.image_url);
+          
+          if (data?.publicUrl) {
+            setImageUrl(data.publicUrl);
+            return;
+          }
+        }
+
+        // Fallback to original URL if nothing else works
+        setImageUrl(page.image_url);
+      } catch (err) {
+        console.error('Error resolving image URL:', err);
+        setError(true);
+      }
+    };
+
+    resolveImageUrl();
+  }, [page.image_url]);
+
+  const handleImageError = () => {
+    console.error(`Failed to load image: ${imageUrl}`);
+    setError(true);
+    setLoaded(false);
+  };
+
+  const retryLoading = () => {
+    console.log('Retrying image load:', imageUrl);
+    setError(false);
+    setLoaded(false);
+  };
+
   return (
     <div className="relative mb-4 w-full">
       {!loaded && !error && (
@@ -34,25 +83,29 @@ const PageImageViewer: React.FC<{ page: PageImage; darkMode: boolean }> = ({ pag
         </div>
       )}
       {error && (
-        <div onClick={() => { setError(false); setLoaded(false); }} className="absolute inset-0 flex flex-col items-center justify-center text-red-500 cursor-pointer">
+        <div 
+          onClick={retryLoading} 
+          className="absolute inset-0 flex flex-col items-center justify-center text-red-500 cursor-pointer bg-black/20 backdrop-blur-sm"
+        >
           <AlertCircle className="w-8 h-8 mb-2" />
           <span className="text-sm">Failed to load page (tap to retry)</span>
+          <span className="text-xs mt-1 text-gray-400">Page {page.page_number}</span>
         </div>
       )}
-      <img
-        loading="lazy"
-        src={page.url}
-        alt={`Page ${page.number}`}
-        onLoad={() => setLoaded(true)}
-        onError={() => setError(true)}
-        className={`w-full object-contain transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}
-        style={{ filter: darkMode ? 'invert(1)' : 'none' }}
-      />
+      {imageUrl && (
+        <img
+          loading="lazy"
+          src={imageUrl}
+          alt={`Page ${page.page_number}`}
+          onLoad={() => setLoaded(true)}
+          onError={handleImageError}
+          className={`w-full object-contain transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+          style={{ filter: darkMode ? 'invert(1)' : 'none' }}
+        />
+      )}
     </div>
   );
 };
-
-import { useAuth } from '../lib/AuthContext';
 
 const Reader: React.FC = () => {
   const { user } = useAuth();
@@ -217,11 +270,13 @@ const Reader: React.FC = () => {
         
         // Exit early if no IDs
         if (!mangaId || !chapterId) {
+          console.error('Missing mangaId or chapterId');
           navigate('/');
           return;
         }
 
         const chapter = parseInt(chapterId);
+        console.log('Fetching manga data for:', { mangaId, chapterId });
         
         // Fetch manga title
         const { data: mangaData, error: mangaError } = await supabase
@@ -291,24 +346,39 @@ const Reader: React.FC = () => {
           setHasNextChapter(false);
           setNextChapterNumber(null);
         }
-
-        // Get chapter pages
+        
+        // Get chapter pages with detailed logging
+        console.log('Fetching pages for chapter:', chapterData.id);
         const { data: pagesData, error: pagesError } = await supabase
           .from('chapter_pages')
           .select('*')
           .eq('chapter_id', chapterData.id)
           .order('page_number', { ascending: true });
 
-        if (pagesError) throw new Error(pagesError.message);
+        if (pagesError) {
+          console.error('Error fetching pages:', pagesError);
+          throw new Error(pagesError.message);
+        }
+
+        console.log('Received pages data:', pagesData?.length || 0, 'pages');
 
         if (pagesData && pagesData.length > 0) {
+          // Log the first page data as sample (without sensitive info)
+          console.log('Sample page data structure:', {
+            id: pagesData[0].id,
+            page_number: pagesData[0].page_number,
+            has_image_url: !!pagesData[0].image_url
+          });
+
           const formattedPages = pagesData.map(page => ({
             id: page.id,
-            url: page.image_url,
-            number: page.page_number
+            chapter_id: chapterData.id,
+            page_number: page.page_number,
+            image_url: page.image_url
           }));
           
           setPages(formattedPages);
+          console.log('Pages formatted and set:', formattedPages.length);
           
           // Cache the chapter's pages
           AppStorage.saveChapterData(mangaId, chapterId, {
@@ -316,17 +386,19 @@ const Reader: React.FC = () => {
             title: chapterTitle
           });
         } else {
+          console.warn('No pages found, using demo pages');
           // If no pages found, show a placeholder
           const demoPages = Array.from({ length: 10 }, (_, i) => ({
             id: `demo-${i+1}`,
-            url: `https://picsum.photos/seed/${mangaId}-${chapter}-${i+1}/800/1200`,
-            number: i + 1
+            chapter_id: chapterData.id,
+            page_number: i + 1,
+            image_url: `https://picsum.photos/seed/${mangaId}-${chapter}-${i+1}/800/1200`
           }));
           setPages(demoPages);
         }
         
       } catch (err) {
-        console.error('Error fetching manga data:', err);
+        console.error('Error in fetchMangaData:', err);
         setError(err instanceof Error ? err.message : 'Failed to load the chapter');
       } finally {
         setLoading(false);
@@ -501,8 +573,8 @@ const Reader: React.FC = () => {
   useEffect(() => {
     if (readingMode === 'single' && pages.length) {
       const prefetch = (url: string) => { const img = new Image(); img.src = url; };
-      if (pages[currentPage]) prefetch(pages[currentPage].url);
-      if (pages[currentPage - 2]) prefetch(pages[currentPage - 2].url);
+      if (pages[currentPage]) prefetch(pages[currentPage].image_url);
+      if (pages[currentPage - 2]) prefetch(pages[currentPage - 2].image_url);
     }
   }, [currentPage, pages, readingMode]);
 
@@ -940,7 +1012,7 @@ const Reader: React.FC = () => {
                   min={1}
                   max={pages.length}
                   value={currentPage}
-                  onChange={e => setCurrentPage(Math.min(Math.max(1, +e.target.value), pages.length))}
+                  onChange={e => setCurrentPage(Math.min(Math.max(1, parseInt(e.target.value) || 1), pages.length))}
                   className="w-24 sm:w-32 mx-2 manga-border p-1"
                 />
               </>

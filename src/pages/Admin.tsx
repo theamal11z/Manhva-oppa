@@ -158,7 +158,14 @@ const Admin: React.FC = () => {
         <div className="flex flex-col h-full">
           {/* Sidebar Header */}
           <div className="p-4 border-b border-white/10 flex items-center justify-between">
-            <h1 className="manga-title text-xl text-red-500 transform -rotate-2">Admin Panel</h1>
+            <div className="flex items-center">
+              <img 
+                src="/images/logo.jpg" 
+                alt="Manhva-oppa Logo" 
+                className="w-8 h-8 rounded-full object-cover shadow-lg mr-2" 
+              />
+              <h1 className="manga-title text-xl text-red-500 transform -rotate-2">Admin Panel</h1>
+            </div>
             <button 
               className="lg:hidden p-2 hover:text-red-500"
               onClick={() => setSidebarOpen(false)}

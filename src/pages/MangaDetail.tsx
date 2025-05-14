@@ -13,7 +13,13 @@ import {
   User,
   Clock,
   AlertCircle,
-  BookOpen
+  BookOpen,
+  Filter,
+  X,
+  Check,
+  Trash2,
+  Pause,
+  Play
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import { 
@@ -25,6 +31,7 @@ import {
   logAllChaptersRead,
   supabase
 } from '../lib/supabaseClient';
+import { ReadingStatus, getReadingStatus, getReadingProgress } from '../lib/readingStatusManager';
 
 type Chapter = {
   id: string;
@@ -49,65 +56,62 @@ const MangaDetail: React.FC = () => {
   const [similarManga, setSimilarManga] = useState<any[]>([]);
   const [inReadingList, setInReadingList] = useState(false);
   const [inFavorites, setInFavorites] = useState(false);
-  const [userStatus, setUserStatus] = useState<string|null>(null);
-  const [userChapter, setUserChapter] = useState<number|null>(null);
+  const [userStatus, setUserStatus] = useState<ReadingStatus | null>(null);
+  const [userChapter, setUserChapter] = useState<number | null>(null);
   const [statusUpdating, setStatusUpdating] = useState(false);
-  const [statusSuccess, setStatusSuccess] = useState<string|null>(null);
+  const [statusSuccess, setStatusSuccess] = useState<string | null>(null);
   
   const [loading, setLoading] = useState(true);
   const [chaptersLoading, setChaptersLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'info' | 'chapters' | 'reviews'>('info');
   
+  const [readingProgress, setReadingProgress] = useState<{ chaptersRead: number; totalChapters: number }>({
+    chaptersRead: 0,
+    totalChapters: 0
+  });
+  
   // Fetch manga details
   useEffect(() => {
     const fetchManga = async () => {
       if (!id) return;
-      
       try {
         setLoading(true);
-        console.log('Fetching manga with ID:', id);
-        const response = await getMangaById(id);
+        setError(null);
         
-        if (response.error) throw new Error(response.error.message);
-        if (!response.data) throw new Error('Manga not found');
-        
-        console.log('Manga data loaded:', response.data.title);
-        setManga(response.data);
-        
-        // Fetch similar manga based on genres
-        if (response.data.genres && response.data.genres.length > 0) {
-          const genreIds = response.data.genres.map((g: any) => g.genres.id);
-          const { data: similarData } = await supabase
-            .from('manga_genres')
-            .select('manga_entries(*)')
-            .in('genre_id', genreIds)
-            .neq('manga_id', id)
-            .limit(6);
+        // Fetch manga details
+        const { data: mangaData, error: mangaError } = await supabase
+          .from('manga_entries')
+          .select(`
+            *,
+            chapters(id, chapter_number, title),
+            manga_genres(genres(name))
+          `)
+          .eq('id', id)
+          .single();
             
-          if (similarData) {
-            const uniqueManga = Array.from(new Set(
-              similarData.map((item: any) => item.manga_entries.id)
-            )).map(uniqueId => 
-              similarData.find((item: any) => item.manga_entries.id === uniqueId)?.manga_entries
-            ).filter(Boolean).slice(0, 6);
-            
-            setSimilarManga(uniqueManga);
-          }
-        }
+        if (mangaError) throw mangaError;
         
-        // Check if manga is in user's reading list
+        setManga(mangaData);
+        setChapters(mangaData.chapters || []);
+        
+        // Check if manga is in user's reading list and get progress
         if (user) {
-          const { data: readingListData } = await supabase
-            .from('user_reading_lists')
-            .select('*')
-            .eq('user_id', user.id)
-            .eq('manga_id', id)
-            .single();
-            
-          setInReadingList(!!readingListData);
-          setUserStatus(readingListData?.status || null);
-          setUserChapter(readingListData?.current_chapter || null);
+          const { data: readingStatus } = await getReadingStatus(user.id, id);
+          if (readingStatus) {
+            setInReadingList(true);
+            setUserStatus(readingStatus.status);
+            setUserChapter(readingStatus.current_chapter);
+          }
+          
+          // Get reading progress
+          const progress = await getReadingProgress(user.id, id);
+          if (!progress.error) {
+            setReadingProgress({
+              chaptersRead: progress.chaptersRead,
+              totalChapters: progress.totalChapters
+            });
+          }
           
           // Check if manga is in user's favorites
           const { data: favoritesData } = await supabase
@@ -201,45 +205,69 @@ const MangaDetail: React.FC = () => {
     fetchChapters();
   }, [id, user]);
   
-  const handleAddToList = async (status: 'reading' | 'completed' | 'on_hold' | 'dropped' | 'plan_to_read') => {
+  // Handle adding to reading list
+  const handleAddToList = async (status: ReadingStatus) => {
     if (!user || !id) return;
     
     setStatusUpdating(true);
     try {
-      // Find the appropriate chapter to set as current chapter based on status
-      let currentChapter = 1;
+      const { data, error } = await updateReadingStatus(user.id, id, status);
+      if (error) throw error;
       
-      // If we have chapters available
-      if (chapters.length > 0) {
-        // For completed status, set to max chapter
-        if (status === 'completed') {
-          // Find the maximum chapter number
-          currentChapter = Math.max(...chapters.map(ch => ch.chapter_number));
-        }
-        // For reading status, start with chapter 1
-        // For other statuses, currentChapter remains 1
-      }
-      
-      await updateReadingStatus(user.id, id, status, currentChapter);
-      // Log reading history accordingly
-      if (status === 'completed') {
-        await logAllChaptersRead(user.id, id, currentChapter);
-      } else if (status === 'reading') {
-        // Log the current chapter as read
-        const chapterObj = chapters.find(ch => ch.chapter_number === currentChapter);
-        if (chapterObj) {
-          await logReadingHistory(user.id, id, chapterObj.id);
-        }
-      }
+      if (data) {
       setInReadingList(true);
-      setUserStatus(status);
-      setUserChapter(currentChapter);
+        setUserStatus(data.status);
+        setUserChapter(data.current_chapter);
       setStatusSuccess(`Added to your ${status.replace('_', ' ')} list`);
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to add to list');
     } finally {
       setStatusUpdating(false);
       setTimeout(() => setStatusSuccess(null), 3000);
+    }
+  };
+
+  // Handle status update
+  const handleStatusUpdate = async (newStatus: ReadingStatus) => {
+    if (!user || !id) return;
+    
+    setStatusUpdating(true);
+    try {
+      const { data, error } = await updateReadingStatus(user.id, id, newStatus, userChapter);
+      if (error) throw error;
+      
+      if (data) {
+        setUserStatus(data.status);
+        setUserChapter(data.current_chapter);
+        setStatusSuccess('Status updated!');
+      }
+    } catch (err: any) {
+      setStatusSuccess('Failed to update status');
+    } finally {
+      setStatusUpdating(false);
+      setTimeout(() => setStatusSuccess(null), 1500);
+    }
+  };
+
+  // Handle chapter progress update
+  const handleProgressUpdate = async (chapterNum: number) => {
+    if (!user || !id || !userStatus) return;
+    
+    setStatusUpdating(true);
+    try {
+      const { data, error } = await updateReadingStatus(user.id, id, userStatus, chapterNum);
+      if (error) throw error;
+      
+      if (data) {
+        setUserChapter(data.current_chapter);
+        setStatusSuccess('Progress updated!');
+      }
+    } catch (err: any) {
+      setStatusSuccess('Failed to update progress');
+    } finally {
+      setStatusUpdating(false);
+      setTimeout(() => setStatusSuccess(null), 1500);
     }
   };
 
@@ -387,29 +415,7 @@ const MangaDetail: React.FC = () => {
               <span className="text-sm text-gray-400">Your Status:</span>
               <select
                 value={userStatus || ''}
-                onChange={async (e) => {
-                  setStatusUpdating(true);
-                  setStatusSuccess(null);
-                  try {
-                    await updateReadingStatus(user.id, manga.id, e.target.value as 'reading' | 'completed' | 'on_hold' | 'dropped' | 'plan_to_read', userChapter || undefined);
-                    // Log reading history accordingly
-                    if (e.target.value === 'completed') {
-                      await logAllChaptersRead(user.id, manga.id, userChapter || chapters.length);
-                    } else if (e.target.value === 'reading' && userChapter) {
-                      const chapterObj = chapters.find(ch => ch.chapter_number === userChapter);
-                      if (chapterObj) {
-                        await logReadingHistory(user.id, manga.id, chapterObj.id);
-                      }
-                    }
-                    setUserStatus(e.target.value);
-                    setStatusSuccess('Status updated!');
-                  } catch {
-                    setStatusSuccess('Failed to update status');
-                  } finally {
-                    setStatusUpdating(false);
-                    setTimeout(() => setStatusSuccess(null), 1500);
-                  }
-                }}
+                onChange={(e) => handleStatusUpdate(e.target.value as ReadingStatus)}
                 className="manga-border px-2 py-1 bg-black/40 text-white rounded"
                 disabled={statusUpdating}
               >
@@ -427,26 +433,7 @@ const MangaDetail: React.FC = () => {
                   min={1}
                   max={chapters.length}
                   value={userChapter || ''}
-                  onChange={async (e) => {
-                    const chapterNum = Number(e.target.value);
-                    setStatusUpdating(true);
-                    setStatusSuccess(null);
-                    try {
-                      await updateReadingStatus(user.id, manga.id, (userStatus || 'reading') as 'reading' | 'completed' | 'on_hold' | 'dropped' | 'plan_to_read', chapterNum);
-                      // Log reading history for the selected chapter
-                      const chapterObj = chapters.find(ch => ch.chapter_number === chapterNum);
-                      if (chapterObj) {
-                        await logReadingHistory(user.id, manga.id, chapterObj.id);
-                      }
-                      setUserChapter(chapterNum);
-                      setStatusSuccess('Progress updated!');
-                    } catch {
-                      setStatusSuccess('Failed to update progress');
-                    } finally {
-                      setStatusUpdating(false);
-                      setTimeout(() => setStatusSuccess(null), 1500);
-                    }
-                  }}
+                  onChange={(e) => handleProgressUpdate(Number(e.target.value))}
                   className="manga-border px-2 py-1 w-16 bg-black/40 text-white rounded"
                   disabled={statusUpdating}
                 />

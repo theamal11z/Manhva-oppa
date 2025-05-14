@@ -14,16 +14,14 @@ import {
   Clock,
   FileText,
   Tag,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-
-type UserPreferences = {
-  favoriteGenres: string[];
-  excludeGenres: string[];
-  darkMode: boolean;
-  readingDirection: 'rtl' | 'ltr';
-};
+import { UserPreferences, getUserPreferences, saveUserPreferences } from '../lib/preferencesManager';
+import { ReadingHistoryEntry, getUserReadingHistory, clearReadingHistory, clearMangaFromHistory } from '../lib/readingHistoryManager';
 
 const Profile: React.FC = () => {
   const { user, loading: authLoading, signOut, isAdmin } = useAuth();
@@ -47,16 +45,14 @@ const Profile: React.FC = () => {
     readingDirection: 'rtl',
   });
   
-  // Reading history (for demo purposes)
-  const [readingHistory] = useState<any[]>(
-    Array.from({ length: 10 }, (_, i) => ({
-      id: `manga-${i + 1}`,
-      title: `Manga Title ${i + 1}`,
-      coverImage: `https://picsum.photos/seed/manga${i + 1}/300/400`,
-      chapter: Math.floor(Math.random() * 50) + 1,
-      timestamp: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString(),
-    }))
-  );
+  // Reading history state
+  const [readingHistory, setReadingHistory] = useState<ReadingHistoryEntry[]>([]);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  const [totalHistory, setTotalHistory] = useState(0);
+  const HISTORY_PER_PAGE = 10;
   
   // Available genres for preferences
   const allGenres = [
@@ -74,10 +70,10 @@ const Profile: React.FC = () => {
   useEffect(() => {
     if (!user) return;
     
-    // Fetch user profile data (in a real app)
-    const fetchUserProfile = async () => {
+    const fetchUserData = async () => {
       try {
         setLoading(true);
+        setError(null);
         
         // Fetch profile from user_profiles
         const { data: profile, error: profileError } = await supabase
@@ -90,33 +86,21 @@ const Profile: React.FC = () => {
         if (profile) {
           setDisplayName(profile.full_name || profile.username || user.email?.split('@')[0] || 'User');
           setBio(profile.bio || '');
-          setAvatar(profile.avatar_url || `https://ui-avatars.com/api/?name=${user.email?.split('@')[0]}&background=random`);
+          setAvatar(profile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.full_name || user.email?.split('@')[0] || 'User')}&background=random`);
         }
 
-        // Fetch preferences from user_preferences
-        const { data: pref, error: prefError } = await supabase
-          .from('user_preferences')
-          .select('*')
-          .eq('user_id', user.id)
-          .single();
-        if (prefError && prefError.code !== 'PGRST116') throw prefError; // ignore 'row not found' error
-        if (pref) {
-          setPreferences({
-            favoriteGenres: pref.favorite_genres || [],
-            excludeGenres: pref.exclude_genres || [],
-            darkMode: typeof pref.dark_mode === 'boolean' ? pref.dark_mode : true,
-            readingDirection: pref.reading_direction || 'rtl',
-          });
-        }
+        // Fetch preferences using the new helper
+        const userPrefs = await getUserPreferences(user.id);
+        setPreferences(userPrefs);
       } catch (err: any) {
-        console.error('Error fetching profile:', err);
-        setError(err.message || 'Failed to load profile');
+        console.error('Error fetching user data:', err);
+        setError(err.message || 'Failed to load user data');
       } finally {
         setLoading(false);
       }
     };
     
-    fetchUserProfile();
+    fetchUserData();
   }, [user]);
   
   const handleSignOut = async () => {
@@ -160,25 +144,15 @@ const Profile: React.FC = () => {
   };
   
   const savePreferences = async () => {
+    if (!user) return;
+    
     try {
       setLoading(true);
+      setError(null);
       
-      const { error } = await supabase
-        .from('user_preferences')
-        .upsert({
-          user_id: user?.id,
-          favorite_genres: preferences.favoriteGenres,
-          exclude_genres: preferences.excludeGenres,
-          dark_mode: preferences.darkMode,
-          reading_direction: preferences.readingDirection,
-          updated_at: new Date().toISOString(),
-        });
-      
-      if (error) throw error;
+      await saveUserPreferences(user.id, preferences);
       
       setSuccess('Preferences saved successfully!');
-      
-      // Clear success message after 3 seconds
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error('Error saving preferences:', err);
@@ -219,6 +193,67 @@ const Profile: React.FC = () => {
       }
     });
   };
+  
+  // Fetch reading history
+  const fetchReadingHistory = async (page: number = 1) => {
+    if (!user) return;
+    try {
+      setHistoryLoading(true);
+      setHistoryError(null);
+      
+      const response = await getUserReadingHistory(user.id, page, HISTORY_PER_PAGE);
+      
+      if (response.error) {
+        throw response.error;
+      }
+      
+      setReadingHistory(response.data || []);
+      setHasMoreHistory(response.hasMore);
+      setTotalHistory(response.total);
+      setHistoryPage(page);
+    } catch (err: any) {
+      setHistoryError(err.message || 'Failed to fetch reading history');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  // Handle clearing history
+  const handleClearHistory = async () => {
+    if (!user || !window.confirm('Are you sure you want to clear your entire reading history?')) return;
+    try {
+      setHistoryLoading(true);
+      const { error } = await clearReadingHistory(user.id);
+      if (error) throw error;
+      await fetchReadingHistory(1);
+    } catch (err: any) {
+      setHistoryError(err.message || 'Failed to clear reading history');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  // Handle clearing single manga from history
+  const handleClearMangaFromHistory = async (mangaId: string) => {
+    if (!user || !window.confirm('Remove this manga from your reading history?')) return;
+    try {
+      setHistoryLoading(true);
+      const { error } = await clearMangaFromHistory(user.id, mangaId);
+      if (error) throw error;
+      await fetchReadingHistory(historyPage);
+    } catch (err: any) {
+      setHistoryError(err.message || 'Failed to remove manga from history');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  // Fetch reading history when tab changes
+  useEffect(() => {
+    if (activeTab === 'history' && user) {
+      fetchReadingHistory(1);
+    }
+  }, [activeTab, user]);
   
   if (authLoading) {
     return (
@@ -280,13 +315,11 @@ const Profile: React.FC = () => {
             {/* User card */}
             <div className="manga-panel p-6 bg-black/30 text-center">
               <div className="relative w-32 h-32 mx-auto overflow-hidden rounded-full mb-4">
-                {avatar && (
-                  <img 
-                    src={avatar} 
-                    alt={displayName}
-                    className="absolute inset-0 w-full h-full object-cover"
-                  />
-                )}
+                <img 
+                  src={avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&size=128&background=random`}
+                  alt={displayName}
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
               </div>
               <h2 className="manga-title text-2xl mb-1">{displayName}</h2>
               <p className="text-gray-400 text-sm mb-4">{user.email}</p>
@@ -309,33 +342,30 @@ const Profile: React.FC = () => {
             </div>
             
             {/* Nav tabs */}
-            <div className="manga-panel bg-black/20 overflow-hidden" style={{ position: 'relative', zIndex: 100 }}>
-              <div 
+            <div className="manga-panel bg-black/20 overflow-hidden relative">
+              <button 
                 onClick={() => setActiveTab('profile')}
-                className={`flex items-center gap-3 w-full p-4 text-left cursor-pointer ${activeTab === 'profile' ? 'bg-black/40' : 'hover:bg-black/30'} transition-colors`}
-                style={{ pointerEvents: 'auto !important' }}
+                className={`flex items-center gap-3 w-full p-4 text-left relative z-10 ${activeTab === 'profile' ? 'bg-black/40' : 'hover:bg-black/30'} transition-colors`}
               >
                 <User className="w-5 h-5" />
                 <span>Profile</span>
-              </div>
+              </button>
               
-              <div 
+              <button 
                 onClick={() => setActiveTab('preferences')}
-                className={`flex items-center gap-3 w-full p-4 text-left cursor-pointer ${activeTab === 'preferences' ? 'bg-black/40' : 'hover:bg-black/30'} transition-colors`}
-                style={{ pointerEvents: 'auto !important' }}
+                className={`flex items-center gap-3 w-full p-4 text-left relative z-10 ${activeTab === 'preferences' ? 'bg-black/40' : 'hover:bg-black/30'} transition-colors`}
               >
                 <Settings className="w-5 h-5" />
                 <span>Preferences</span>
-              </div>
+              </button>
               
-              <div 
+              <button 
                 onClick={() => setActiveTab('history')}
-                className={`flex items-center gap-3 w-full p-4 text-left cursor-pointer ${activeTab === 'history' ? 'bg-black/40' : 'hover:bg-black/30'} transition-colors`}
-                style={{ pointerEvents: 'auto !important' }}
+                className={`flex items-center gap-3 w-full p-4 text-left relative z-10 ${activeTab === 'history' ? 'bg-black/40' : 'hover:bg-black/30'} transition-colors`}
               >
                 <History className="w-5 h-5" />
                 <span>Reading History</span>
-              </div>
+              </button>
             </div>
             
             {/* Quick links */}
@@ -415,13 +445,11 @@ const Profile: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-400 mb-1">Profile Image</label>
                     <div className="flex items-center gap-4">
                       <div className="w-20 h-20 overflow-hidden rounded-full">
-                        {avatar && (
-                          <img 
-                            src={avatar} 
-                            alt={displayName}
-                            className="w-full h-full object-cover"
-                          />
-                        )}
+                        <img 
+                          src={avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&size=80&background=random`}
+                          alt={displayName}
+                          className="w-full h-full object-cover"
+                        />
                       </div>
                       
                       {isEditing && (
@@ -621,9 +649,29 @@ const Profile: React.FC = () => {
               <div>
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="manga-title text-2xl transform -rotate-1">Reading History</h2>
+                  {readingHistory.length > 0 && (
+                    <button
+                      onClick={handleClearHistory}
+                      className="manga-border px-4 py-2 hover:text-red-500 transition-all transform hover:scale-105 flex items-center gap-2"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Clear History
+                    </button>
+                  )}
                 </div>
                 
-                {readingHistory.length === 0 ? (
+                {historyError && (
+                  <div className="manga-panel p-4 bg-red-500/10 text-red-500 mb-4 flex items-center gap-2">
+                    <AlertCircle className="w-5 h-5" />
+                    {historyError}
+                  </div>
+                )}
+                
+                {historyLoading ? (
+                  <div className="manga-panel p-6 bg-black/10 text-center">
+                    <p className="text-lg">Loading reading history...</p>
+                  </div>
+                ) : readingHistory.length === 0 ? (
                   <div className="manga-panel p-6 bg-black/10 text-center">
                     <p className="text-lg mb-4">You haven't read any manga yet!</p>
                     <a 
@@ -638,37 +686,79 @@ const Profile: React.FC = () => {
                   <div className="space-y-4">
                     {/* History entries */}
                     {readingHistory.map((item) => (
-                      <a 
-                        key={`${item.id}-${item.chapter}`}
-                        href={`/reader/${item.id}/chapter/${item.chapter}`}
-                        className="flex items-center gap-4 manga-panel p-3 bg-black/10 hover:bg-black/20 transition-colors"
+                      <div 
+                        key={item.id}
+                        className="flex items-center gap-4 manga-panel p-3 bg-black/10 group"
                       >
-                        <div className="w-12 h-16 overflow-hidden flex-shrink-0">
+                        <a 
+                          href={`/manga/${item.manga_id}`}
+                          className="w-12 h-16 overflow-hidden flex-shrink-0"
+                        >
                           <img 
-                            src={item.coverImage} 
-                            alt={item.title}
+                            src={item.manga?.cover_image} 
+                            alt={item.manga?.title}
                             className="w-full h-full object-cover"
                           />
-                        </div>
+                        </a>
                         
                         <div className="flex-1 min-w-0">
-                          <h3 className="font-medium truncate">{item.title}</h3>
+                          <a 
+                            href={`/manga/${item.manga_id}`}
+                            className="font-medium hover:text-red-500 transition-colors"
+                          >
+                            {item.manga?.title}
+                          </a>
                           <div className="flex items-center gap-2 text-sm text-gray-400">
                             <FileText className="w-3 h-3" />
-                            <span>Chapter {item.chapter}</span>
+                            <span>Chapter {item.chapter?.chapter_number}</span>
                             <Clock className="w-3 h-3 ml-2" />
-                            <span>{new Date(item.timestamp).toLocaleDateString()}</span>
+                            <span>{new Date(item.read_at).toLocaleDateString()}</span>
                           </div>
                         </div>
-                      </a>
+
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <a
+                            href={`/reader/${item.manga_id}/chapter/${item.chapter?.chapter_number}`}
+                            className="manga-border p-2 hover:text-red-500 transition-colors"
+                            title="Continue Reading"
+                          >
+                            <BookOpen className="w-4 h-4" />
+                          </a>
+                          <button
+                            onClick={() => handleClearMangaFromHistory(item.manga_id)}
+                            className="manga-border p-2 hover:text-red-500 transition-colors"
+                            title="Remove from History"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
                     ))}
                     
-                    <div className="pt-4 text-center">
-                      <p className="text-gray-400 text-sm mb-2">Showing recent reading history</p>
-                      <button className="manga-border px-4 py-2 hover:text-red-500 transition-all transform hover:scale-105 hover:rotate-1">
-                        View Full History
+                    {/* Pagination */}
+                    {totalHistory > HISTORY_PER_PAGE && (
+                      <div className="pt-4 flex justify-between items-center">
+                        <p className="text-gray-400 text-sm">
+                          Showing {((historyPage - 1) * HISTORY_PER_PAGE) + 1} - {Math.min(historyPage * HISTORY_PER_PAGE, totalHistory)} of {totalHistory}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => fetchReadingHistory(historyPage - 1)}
+                            disabled={historyPage === 1}
+                            className={`manga-border p-2 ${historyPage === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:text-red-500'} transition-colors`}
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => fetchReadingHistory(historyPage + 1)}
+                            disabled={!hasMoreHistory}
+                            className={`manga-border p-2 ${!hasMoreHistory ? 'opacity-50 cursor-not-allowed' : 'hover:text-red-500'} transition-colors`}
+                          >
+                            <ChevronRight className="w-4 h-4" />
                       </button>
                     </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
