@@ -1,7 +1,7 @@
 import { supabase } from './supabaseClient';
 
 // Constants for recommendation engine
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-2.0:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 const GENERATE_WITH_REAL_API = true; // Set to true to force real API usage
 
 // Types for recommendation engine
@@ -101,21 +101,35 @@ export const generateUserProfile = async (userId: string): Promise<UserProfile> 
 
     if (favoritesError) throw favoritesError;
 
-    // Extract genres from reading history
-    const readingGenres = readingHistoryData
-      ? readingHistoryData.flatMap(item => {
-          const genresData = item.manga_entries?.genres || [];
-          return genresData.flatMap((g: any) => g.genres?.name || []);
-        })
-      : [];
+    // Extract genres from reading history - with better type handling
+    let readingGenres: string[] = [];
+    if (readingHistoryData && Array.isArray(readingHistoryData)) {
+      readingHistoryData.forEach(item => {
+        if (item.manga_entries && item.manga_entries.genres) {
+          const genresData = Array.isArray(item.manga_entries.genres) ? item.manga_entries.genres : [];
+          genresData.forEach((g: any) => {
+            if (g.genres && g.genres.name) {
+              readingGenres.push(g.genres.name);
+            }
+          });
+        }
+      });
+    }
 
-    // Extract genres from favorites
-    const favoriteGenres = favoritesData
-      ? favoritesData.flatMap(item => {
-          const genresData = item.manga_entries?.genres || [];
-          return genresData.flatMap((g: any) => g.genres?.name || []);
-        })
-      : [];
+    // Extract genres from favorites - with better type handling
+    let favoriteGenres: string[] = [];
+    if (favoritesData && Array.isArray(favoritesData)) {
+      favoritesData.forEach(item => {
+        if (item.manga_entries && item.manga_entries.genres) {
+          const genresData = Array.isArray(item.manga_entries.genres) ? item.manga_entries.genres : [];
+          genresData.forEach((g: any) => {
+            if (g.genres && g.genres.name) {
+              favoriteGenres.push(g.genres.name);
+            }
+          });
+        }
+      });
+    }
 
     // Count genre occurrences to find preferences
     const genreCounts: Record<string, number> = {};
@@ -294,6 +308,7 @@ Ensure the JSON is properly formatted and valid.`
 
     // Verify we have a valid API key, not just the placeholder
     console.log('Attempting to generate real recommendations with Gemini API');
+    console.log('Prompt being sent to Gemini API:', JSON.stringify(prompt, null, 2));
     
     // Make API call to Gemini Flash 2.0 with extended timeout
     const controller = new AbortController();
@@ -318,6 +333,7 @@ Ensure the JSON is properly formatted and valid.`
 
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('Gemini API returned non-OK status. Response text:', errorText);
         let errorMessage = 'Unknown error';
         try {
           const errorData = JSON.parse(errorText);
@@ -330,7 +346,9 @@ Ensure the JSON is properly formatted and valid.`
       }
 
       const responseData = await response.json();
+      console.log('Raw Gemini API response data:', JSON.stringify(responseData, null, 2));
       if (!responseData.candidates || !responseData.candidates[0]?.content?.parts?.length) {
+        console.error('Invalid response format from Gemini API: Missing candidates or content.', responseData);
         throw new Error('Invalid response format from Gemini API');
       }
       
@@ -339,7 +357,7 @@ Ensure the JSON is properly formatted and valid.`
       let aiRecommendations: Array<{id: string, reason: string, match_percentage: number}>;
       
       try {
-        console.log('Raw AI response:', aiText);
+        console.log('Raw AI response text part:', aiText);
         
         // Try multiple approaches to extract JSON from the response
         let jsonStr = '';
@@ -391,12 +409,15 @@ Ensure the JSON is properly formatted and valid.`
         aiRecommendations = aiRecommendations.filter(rec => rec.id && rec.reason && typeof rec.match_percentage === 'number');
         
         if (aiRecommendations.length === 0) {
+          console.error('AI returned empty or filtered out all recommendations after parsing.', aiRecommendations);
           throw new Error('No valid recommendations in AI response');
         }
         
         console.log(`Successfully parsed ${aiRecommendations.length} recommendations from AI`);
-      } catch (parseError) {
-        console.error('Error parsing AI response:', parseError);
+      } catch (parseError: any) {
+        console.error('Error parsing AI response JSON:', parseError.message, 'Attempting emergency fallback.');
+        // Log the raw AI text again before throwing parsing error for easier debugging
+        console.error('AI text that failed to parse:', aiText);
         throw new Error('Failed to parse AI recommendations');
       }
       
@@ -443,12 +464,58 @@ Ensure the JSON is properly formatted and valid.`
     } catch (error: any) {
       // Handle both API timeout errors and other errors
       if (error.name === 'AbortError') {
-        console.error('Gemini API request timed out after 20 seconds');
+        console.error('Gemini API request timed out after 20 seconds', error);
         console.log('Real API request timed out, throwing error to trigger proper user feedback');
         throw new Error('The recommendation service is taking longer than expected. Please try again.');
       }
-      console.error('Error in Gemini API call:', error);
-      throw error; // Let the outer catch handle this to show proper error to user
+      console.error('Error in Gemini API call or processing:', error);
+    
+      // Log the full error for debugging
+      console.error('Full error details:', error.message, error.stack);
+      
+      // Check if this is a Gemini API key issue
+      if (error.message && (error.message.includes('API key') || error.message.includes('apiKey'))) {
+        console.error('API key error detected - this is likely an invalid or missing Gemini API key');
+        throw new Error('The recommendation system requires a valid Gemini API key. Please contact the administrator.');
+      }
+      
+      // Create emergency fallback recommendations - only as a last resort
+      console.warn('Creating emergency fallback recommendations due to an unexpected error.');
+      try {
+        // Try to get at least some manga data to show
+        const { data: mangaData } = await supabase
+          .from('manga_entries')
+          .select('id, title, cover_image')
+          .order('popularity', { ascending: false })
+          .limit(5);
+        
+        if (mangaData && mangaData.length > 0) {
+          console.log('Using emergency fallback: popular manga recommendations');
+          return mangaData.map((manga, index) => {
+            // Process the cover image URL to ensure it's valid
+            let coverImage = manga.cover_image || '/placeholder-cover.jpg';
+            if (coverImage && !coverImage.startsWith('/') && !coverImage.startsWith('http')) {
+              coverImage = '/' + coverImage;
+            }
+            
+            return {
+              id: manga.id,
+              title: manga.title,
+              cover_image: coverImage,
+              reason: 'Recommended based on popularity (emergency fallback)',
+              match_percentage: 70 - (index * 5),
+              genres: [],
+              updated_at: new Date().toISOString()
+            };
+          });
+        }
+        console.warn('Emergency fallback: No popular manga found or error fetching them.');
+        return []; // Ensure an empty array is returned if fallback fails to find manga
+      } catch (fallbackError) {
+        console.error('Even emergency fallback recommendations failed:', fallbackError);
+        // Ultimate fallback - throw a clear error instead of returning empty array
+        throw new Error('Unable to generate recommendations at this time. Please try again later.');
+      }
     } finally {
       // Make sure timeout is always cleared
       clearTimeout(timeoutId);
