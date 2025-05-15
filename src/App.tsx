@@ -26,6 +26,7 @@ import Admin from './pages/Admin';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import ResetPassword from './pages/ResetPassword';
+import SmartRecommendations from './pages/SmartRecommendations';
 
 function App() {
   const { user, loading, signOut, isAdmin } = useAuth();
@@ -512,6 +513,15 @@ function App() {
             element={
               <ProtectedRoute>
                 <Profile />
+              </ProtectedRoute>
+            } 
+          />
+          
+          <Route 
+            path="/recommendations" 
+            element={
+              <ProtectedRoute>
+                <SmartRecommendations />
               </ProtectedRoute>
             } 
           />
