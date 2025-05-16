@@ -38,10 +38,10 @@ type MangaProgress = {
 
 // Update the manga list item type
 type MangaListItem = {
-  id: string;
-  manga_id: string;
-  status: ReadingStatus;
-  current_chapter: number;
+  id: string; // ID of the user_reading_lists or user_favorites entry
+  manga_id: string; // Actual ID of the manga
+  status: ReadingStatus | null; // Status can be null if not on reading list
+  current_chapter: number | null; // Current chapter can be null
   updated_at: string;
   manga: {
     title: string;
@@ -100,29 +100,48 @@ const MyList: React.FC = () => {
       console.log(`Fetched ${items.length} items for ${activeTab} list`);
       
       // Format the data with detailed progress information
-      const formattedList = await Promise.all(items.map(async (item: any) => {
-        const mangaId = activeTab === 'reading' ? item.manga_id : item.manga?.id;
-        const manga = item.manga || {};
+      const formattedListPromises = items.map(async (item: any) => {
+        const isReadingTab = activeTab === 'reading';
+        const mangaDetails = isReadingTab ? item.manga : item.manga; // item.manga for favorites comes from the join
+        const mangaIdToProcess = isReadingTab ? item.manga_id : mangaDetails?.id;
+
+        if (!mangaIdToProcess || !mangaDetails) {
+          console.warn(`Skipping item in ${activeTab} list due to missing manga_id or manga details:`, item);
+          return null; // Skip this item if essential details are missing
+        }
         
         // Get detailed reading status including progress
-        const { status, currentChapter, progress } = await getDetailedReadingStatus(user.id, mangaId);
+        const { status: detailedStatus, currentChapter: detailedCurrentChapter, progress } = await getDetailedReadingStatus(user.id, mangaIdToProcess);
         
+        let finalStatus: ReadingStatus | null = detailedStatus;
+        if (!finalStatus && isReadingTab && item.status) {
+          if (STATUS_OPTIONS.includes(item.status as ReadingStatus)) {
+            finalStatus = item.status as ReadingStatus;
+          } else {
+            console.warn(`Invalid status value '${item.status}' for manga ${mangaIdToProcess}. Defaulting to null.`);
+            finalStatus = null; 
+          }
+        }
+
         return {
-          id: item.id,
-          manga_id: mangaId,
-          status: status || item.status,
-          current_chapter: currentChapter || item.current_chapter || 1,
+          id: item.id, // This is the user_reading_lists.id or user_favorites.id
+          manga_id: mangaIdToProcess,
+          status: finalStatus,
+          current_chapter: detailedCurrentChapter || (isReadingTab ? item.current_chapter : null),
           updated_at: item.updated_at || new Date().toISOString(),
           manga: {
-            title: manga.title || 'Unknown Title',
-            cover_image: manga.cover_image || '',
-            total_chapters: progress.totalChapters || 0
+            title: mangaDetails.title || 'Unknown Title',
+            cover_image: mangaDetails.cover_image || '',
+            total_chapters: progress.totalChapters || mangaDetails.total_chapters || 0
           },
           progress: progress
         };
-      }));
+      });
       
-      setMangaList(formattedList);
+      const resolvedFormattedList = await Promise.all(formattedListPromises);
+      const validFormattedList = resolvedFormattedList.filter(item => item !== null) as MangaListItem[];
+      
+      setMangaList(validFormattedList);
     } catch (err) {
       console.error('Error fetching user list:', err);
       setError(err instanceof Error ? err.message : 'Failed to load your list');
@@ -152,7 +171,8 @@ const MyList: React.FC = () => {
     return manga.status === selectedStatus;
   });
   
-  const getStatusColor = (status: ReadingStatus) => {
+  const getStatusColor = (status: ReadingStatus | null) => {
+    if (status === null) return 'text-gray-500'; // Default for null status
     switch (status) {
       case 'reading': return 'text-green-500';
       case 'completed': return 'text-blue-500';
@@ -197,7 +217,7 @@ const MyList: React.FC = () => {
     if (!user) return;
     try {
       setActionLoading(prev => ({ ...prev, [mangaId]: true }));
-      let currentChapter = 1;
+      let currentChapter = mangaList.find(manga => manga.manga_id === mangaId)?.current_chapter || 1;
       // For 'completed', fetch the last chapter number for this manga
       if (newStatus === 'completed') {
         const { data: chapters, error: chapterError } = await supabase
@@ -247,7 +267,8 @@ const MyList: React.FC = () => {
     }
   };
   
-  const getStatusIcon = (status: ReadingStatus) => {
+  const getStatusIcon = (status: ReadingStatus | null) => {
+    if (status === null) return <List className="w-4 h-4" />; // Default for null status
     switch (status) {
       case 'reading': return <Play className="w-4 h-4" />;
       case 'completed': return <Check className="w-4 h-4" />;
@@ -330,22 +351,21 @@ const MyList: React.FC = () => {
             <div className="flex flex-wrap gap-2 mb-6">
               <button
                 onClick={() => setSelectedStatus('all')}
-                className={`manga-border px-3 py-1 text-sm ${selectedStatus === 'all' ? 'bg-red-500/30' : 'bg-black/30'} transition-colors`}
+                className={`w-full text-left px-2 py-1 text-sm hover:bg-white/10 flex items-center gap-2 ${selectedStatus === 'all' ? 'text-red-500' : 'text-gray-300'}`}
               >
-                All
+                <List className="w-4 h-4" />
+                All Statuses
                 <span className="ml-1 text-xs">{mangaList.length}</span>
               </button>
               {STATUS_OPTIONS.map((status) => {
-                const count = mangaList.filter(m => m.status === status).length;
                 return (
                   <button
                     key={status}
                     onClick={() => setSelectedStatus(status)}
-                    className={`manga-border px-3 py-1 text-sm ${selectedStatus === status ? 'bg-red-500/30' : 'bg-black/30'} ${count === 0 ? 'opacity-50' : ''} transition-colors`}
-                    disabled={count === 0}
+                    className={`w-full text-left px-2 py-1 text-sm hover:bg-white/10 flex items-center gap-2 ${getStatusColor(status)} ${selectedStatus === status ? 'ring-1 ring-red-500' : ''}`}
                   >
+                    {getStatusIcon(status)}
                     <span className="capitalize">{status.replace('_', ' ')}</span>
-                    <span className="ml-1 text-xs">{count}</span>
                   </button>
                 );
               })}
@@ -374,7 +394,7 @@ const MyList: React.FC = () => {
                 : 'You haven\'t added any favorites yet!'}
             </p>
             <p className="mb-6">Start exploring the manga collection to add some titles.</p>
-            <Link to="/discover" className="inline-block manga-gradient manga-border px-6 py-3 font-semibold transition-all transform hover:scale-105 hover:-rotate-2 manga-title">
+            <Link to="/discover" className="inline-block manga-border px-6 py-3 font-semibold transition-all transform hover:scale-105 hover:-rotate-2 manga-title">
               <BookOpen className="inline-block mr-2" />
               Discover Manga
             </Link>
@@ -400,9 +420,9 @@ const MyList: React.FC = () => {
                   </Link>
                   
                   <div className="flex flex-wrap items-center gap-2 mt-1">
-                    <span className={`inline-flex items-center gap-1 text-sm ${getStatusColor(manga.status)}`}>
-                      {getStatusIcon(manga.status)}
-                      <span className="capitalize">{manga.status.replace('_', ' ')}</span>
+                    <span className={`inline-flex items-center gap-1 text-sm ${getStatusColor(manga.status as ReadingStatus | null)}`}>
+                      {getStatusIcon(manga.status as ReadingStatus | null)}
+                      <span className="capitalize">{manga.status?.replace('_', ' ')}</span>
                     </span>
                     
                     {manga.progress && (

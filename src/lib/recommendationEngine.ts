@@ -15,21 +15,6 @@ interface UserProfile {
   avoid_genres: string[];
 }
 
-// Interface for manga items from the database
-interface MangaItem {
-  id: string;
-  title: string;
-  description: string;
-  genres: string[];
-  tags?: string[];
-  cover_image: string;
-  status: string;
-  type: string;
-  popularity: number;
-  rating: number;
-  created_at?: string;
-}
-
 interface Recommendation {
   id: string;
   title: string;

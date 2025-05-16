@@ -1,12 +1,13 @@
-import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Star, TrendingUp, Filter, RefreshCw, AlertCircle } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Star, TrendingUp, Filter, RefreshCw, AlertCircle, ChevronDown, Check } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { updateUserRecommendations, checkAndUpdateRecommendations } from '../lib/recommendationScheduler';
 import RecommendationOnboarding from '../components/RecommendationOnboarding';
 import { useAuth } from '../hooks/useAuth';
+import RecommendationCard from '../components/RecommendationCard';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
-// Type definition for recommendation item
 interface Recommendation {
   id: string;
   title: string;
@@ -17,240 +18,183 @@ interface Recommendation {
   updated_at: string;
 }
 
-// Type for user profile data
-interface UserProfile {
-  genres: string[];
-  themes: string[];
-  tropes: string[];
-  characters: string[];
-  pace?: string;
-  tone?: string;
-  avoid_genres: string[];
+interface UserRecommendationsData {
+  recommendations: Recommendation[];
+  lastUpdated: string | null;
+  nextUpdate: string | null;
+  needsOnboarding: boolean;
 }
 
 const SmartRecommendations: React.FC = () => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-  
-  // State management
-  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
-  // We store the user profile but don't use it directly in the UI
-  // It's needed to track what the user's preferences are
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'best-matches' | 'new'>('all');
-  const [refreshing, setRefreshing] = useState(false);
-  const [saveNotice, setSaveNotice] = useState(false);
-  const [needsOnboarding, setNeedsOnboarding] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [nextUpdate, setNextUpdate] = useState<string | null>(null);
-  
-  // Track if recommendations have been fetched to prevent repeated fetches
-  const [hasFetched, setHasFetched] = useState(false);
-  
-  // Fetch recommendations ONLY when the component mounts or user changes
-  useEffect(() => {
-    if (!authLoading) {
-      if (!user) {
-        navigate('/login');
-      } else if (!hasFetched) {
-        // Only fetch if we haven't already fetched recommendations
-        fetchRecommendations();
-        setHasFetched(true);
-      }
-    }
-  }, [user, authLoading, navigate, hasFetched]);
+  const queryClient = useQueryClient();
 
-  // Fetch recommendations from the database
-  const fetchRecommendations = async () => {
-    try {
-      if (!user) return;
-      
-      setLoading(true);
-      setError(null);
-      
-      // Get recommendation data
-      const { data, error } = await supabase
+  const [filter, setFilter] = useState<'all' | 'best-matches' | 'new'>('all');
+  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
+  const [showGenreFilter, setShowGenreFilter] = useState(false);
+  const [saveNotice, setSaveNotice] = useState(false);
+
+  const { 
+    data: recommendationsData,
+    isLoading: queryLoading,
+    isError: queryIsError,
+    error: queryError
+  } = useQuery<UserRecommendationsData, Error>({
+    queryKey: ['userRecommendations', user?.id],
+    queryFn: async () => {
+      if (!user) throw new Error("User not available for fetching recommendations.");
+
+      const { data, error: dbError } = await supabase
         .from('user_recommendations')
-        .select('recommendations, profile, last_updated, next_update')
+        .select('recommendations, last_updated, next_update')
         .eq('user_id', user.id)
         .maybeSingle();
-        
-      if (error) throw error;
-      
+
+      if (dbError) throw dbError;
+
       if (!data) {
-        console.log('No recommendations found, user may need onboarding');
-        setNeedsOnboarding(true);
-        setLoading(false);
-        return;
+        return { recommendations: [], lastUpdated: null, nextUpdate: null, needsOnboarding: true };
       }
-      
-      // Update state with fetched data, even if empty (to prevent refresh loops)
-      setRecommendations(data.recommendations && Array.isArray(data.recommendations) ? data.recommendations : []);
-      setUserProfile(data.profile || null);
-      setLastUpdated(data.last_updated);
-      setNextUpdate(data.next_update);
-      
-      // Only refresh if there are truly no recommendations
-      if (!data.recommendations || !Array.isArray(data.recommendations) || data.recommendations.length === 0) {
-        console.log('Empty recommendations, running one-time update');
-        await refreshRecommendations();
-        return;
+
+      return {
+        recommendations: data.recommendations && Array.isArray(data.recommendations) ? data.recommendations : [],
+        lastUpdated: data.last_updated,
+        nextUpdate: data.next_update,
+        needsOnboarding: false,
+      };
+    },
+    enabled: !!user && !authLoading,
+    staleTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: true,
+  });
+
+  const { mutate: refreshMutate, isPending: refreshing } = useMutation<void, Error, void>({
+    mutationFn: async () => {
+      if (!user) throw new Error("User not available for refreshing recommendations.");
+
+      console.log('Starting recommendation refresh via mutation...');
+      const updated = await updateUserRecommendations(user.id);
+      if (!updated) {
+        console.warn('updateUserRecommendations did not return a truthy value during mutation.');
       }
-      
-      // Only check for auto-updates if we're not already in a refresh cycle
-      const lastUpdateTime = data.last_updated ? new Date(data.last_updated).getTime() : 0;
+    },
+    onSuccess: () => {
+      console.log('Refresh mutation successful, invalidating recommendations query.');
+      queryClient.invalidateQueries({ queryKey: ['userRecommendations', user?.id] });
+      setSaveNotice(true);
+      setTimeout(() => setSaveNotice(false), 3000);
+    },
+    onError: (err: Error) => {
+      console.error('Refresh mutation error:', err);
+    },
+  });
+
+  const recommendations = recommendationsData?.recommendations || [];
+  const lastUpdated = recommendationsData?.lastUpdated || null;
+  const nextUpdate = recommendationsData?.nextUpdate || null;
+  const needsOnboarding = recommendationsData?.needsOnboarding || false;
+  const loading = queryLoading || (authLoading && !recommendationsData);
+  const error = queryIsError ? queryError?.message || 'Failed to load recommendations.' : null;
+
+  const availableGenres = useMemo(() => {
+    if (!recommendationsData?.recommendations) return [];
+    const allGenres = recommendationsData.recommendations.reduce((acc: string[], rec) => {
+      rec.genres.forEach(genre => {
+        if (!acc.includes(genre)) {
+          acc.push(genre);
+        }
+      });
+      return acc;
+    }, []);
+    return allGenres.sort();
+  }, [recommendationsData?.recommendations]);
+
+  const toggleGenreFilter = (genre: string) => {
+    setSelectedGenres(prev => 
+      prev.includes(genre) 
+        ? prev.filter(g => g !== genre) 
+        : [...prev, genre]
+    );
+  };
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate('/login');
+    }
+  }, [user, authLoading, navigate]);
+
+  useEffect(() => {
+    if (user && lastUpdated && recommendations.length > 0 && !refreshing && !loading) {
+      const lastUpdateTime = new Date(lastUpdated).getTime();
       const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
-      
-      // Only check for updates if last update was more than a day ago
+
       if (lastUpdateTime < oneDayAgo) {
         console.log('Checking if recommendations need updating (last update was >24h ago)');
         checkAndUpdateRecommendations(user.id)
           .then((updated) => {
             if (updated) {
-              console.log('Recommendations were automatically updated');
-              // Get the updated recommendations without triggering another refresh
-              supabase
-                .from('user_recommendations')
-                .select('recommendations')
-                .eq('user_id', user.id)
-                .maybeSingle()
-                .then(({ data: updatedData }) => {
-                  if (updatedData?.recommendations) {
-                    setRecommendations(updatedData.recommendations);
-                  }
-                });
+              console.log('Recommendations were automatically updated, invalidating query.');
+              queryClient.invalidateQueries({ queryKey: ['userRecommendations', user?.id] });
             }
           })
-          .catch(console.error);
+          .catch(err => console.error("Error during stale check and update:", err));
       }
-      
-    } catch (err: any) {
-      console.error('Fetch error:', err);
-      setError(err.message || 'Failed to fetch recommendations');
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [user, lastUpdated, recommendations, refreshing, loading, queryClient]);
 
-  // Refresh recommendations from the API - with protection against multiple refreshes
-  const refreshRecommendations = async () => {
-    // Guard clauses to prevent multiple refreshes
-    if (!user || refreshing) {
-      console.log('Skipping refresh - user not ready or already refreshing');
-      return;
-    }
-    
-    // Set a flag to indicate refresh is in progress
-    setRefreshing(true);
-    setError(null);
-    
-    // Set a timeout to provide feedback if taking too long
-    const feedbackTimeoutId = setTimeout(() => {
-      setError('Recommendation generation is taking longer than expected. Please wait...');
-    }, 10000); // Show message after 10 seconds
-    
-    try {
-      console.log('Starting recommendation refresh...');
-      
-      // Run the update
-      const updated = await updateUserRecommendations(user.id);
-      
-      if (!updated) {
-        throw new Error('Failed to update recommendations');
-      }
-      
-      // Verify recommendations were actually saved to the database
-      console.log('Verifying recommendations were saved...');
-      const { data, error: verifyError } = await supabase
-        .from('user_recommendations')
-        .select('recommendations')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      
-      if (verifyError) throw verifyError;
-      
-      if (!data || !data.recommendations || !Array.isArray(data.recommendations)) {
-        throw new Error('Recommendations were not saved to the database');
-      }
-      
-      console.log('Successfully verified recommendations, updating UI...');
-      
-      // Update the recommendations directly instead of triggering another fetch
-      setRecommendations(data.recommendations);
-      
-      // Update last updated time
-      const { data: timeData } = await supabase
-        .from('user_recommendations')
-        .select('last_updated, next_update')
-        .eq('user_id', user.id)
-        .maybeSingle();
-        
-      if (timeData) {
-        setLastUpdated(timeData.last_updated);
-        setNextUpdate(timeData.next_update);
-      }
-      
-      // Show success notification
-      setSaveNotice(true);
-      setTimeout(() => setSaveNotice(false), 3000);
-    } catch (err: any) {
-      console.error('Refresh error:', err);
-      if (err.message.includes('timed out') || err.message.includes('took too long')) {
-        setError('The recommendation service is currently busy. Please try again later.');
-      } else {
-        setError(err.message || 'Failed to refresh recommendations');
-      }
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  // Filter recommendations based on current filter setting
-  const filteredRecommendations = recommendations.filter(rec => {
-    switch (filter) {
-      case 'best-matches':
-        return rec.match_percentage >= 85;
-      case 'new':
-        const oneWeekAgo = new Date();
-        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-        return new Date(rec.updated_at) > oneWeekAgo;
-      default:
-        return true;
-    }
-  });
-
-  // Handle completion of the onboarding process
-  // Memoize the onboarding complete handler to prevent recreation on every render
-  const handleOnboardingComplete = React.useCallback(() => {
-    setNeedsOnboarding(false);
-    fetchRecommendations();
-  }, []);
-  
-  // Memoize the refresh handler to prevent it from triggering on re-renders
-  const handleRefreshClick = React.useCallback(() => {
+  const handleRefreshClick = useCallback(() => {
     if (!refreshing) {
-      refreshRecommendations();
+      console.log('Manual refresh triggered by user click');
+      refreshMutate();
     }
-  }, [refreshing]);
+  }, [refreshing, refreshMutate]);
 
-  // Loading state
-  if (authLoading) {
+  const filteredRecommendations = useMemo(() => {
+    if (!Array.isArray(recommendations)) return [];
+    return recommendations.filter(rec => {
+      let mainFilterPass = false;
+      switch (filter) {
+        case 'best-matches':
+          mainFilterPass = rec.match_percentage >= 85;
+          break;
+        case 'new':
+          const oneWeekAgo = new Date();
+          oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+          mainFilterPass = new Date(rec.updated_at) > oneWeekAgo;
+          break;
+        default: // 'all'
+          mainFilterPass = true;
+          break;
+      }
+      if (!mainFilterPass) return false;
+
+      if (selectedGenres.length > 0) {
+        if (!rec.genres.some(genre => selectedGenres.includes(genre))) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [recommendations, filter, selectedGenres]);
+
+  if (authLoading && !recommendationsData) {
     return (
       <div className="container mx-auto px-4 py-8 flex justify-center items-center min-h-[60vh]">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-500"></div>
       </div>
     );
   }
-  
-  // Show onboarding for new users
-  if (needsOnboarding && user) {
-    return <RecommendationOnboarding userId={user.id} onComplete={handleOnboardingComplete} />;
+
+  if (needsOnboarding) {
+    return <RecommendationOnboarding userId={user!.id} onComplete={() => {
+      queryClient.invalidateQueries({ queryKey: ['userRecommendations', user?.id] });
+    }} />;
   }
 
-  // Main component render
   return (
+    <>
     <div className="container mx-auto px-4 py-8">
       {/* Success notification */}
       {saveNotice && (
@@ -297,6 +241,41 @@ const SmartRecommendations: React.FC = () => {
           New
         </button>
         
+        {/* Genre Filter Dropdown */}
+        <div className="relative ml-4">
+          <button 
+            onClick={() => setShowGenreFilter(!showGenreFilter)}
+            className="filter-button px-3 py-1 text-sm flex items-center border border-gray-700 text-gray-300 disabled:opacity-50"
+          >
+            <Filter className="w-3 h-3 mr-1" />
+            Genres ({selectedGenres.length > 0 ? selectedGenres.length : 'All'})
+            <ChevronDown className={`w-4 h-4 ml-1 transition-transform ${showGenreFilter ? 'rotate-180' : ''}`} />
+          </button>
+          {showGenreFilter && availableGenres.length > 0 && (
+            <div className="absolute z-10 mt-2 w-56 origin-top-right rounded-md bg-gray-800 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none py-1">
+              <div className="px-2 py-1">
+                <button 
+                  onClick={() => setSelectedGenres([])} 
+                  className="w-full text-left px-2 py-1.5 text-xs text-red-400 hover:bg-gray-700 rounded-md mb-1"
+                >
+                  Clear All Genres
+                </button>
+              </div>
+              {availableGenres.map((genre) => (
+                <button
+                  key={genre}
+                  onClick={() => toggleGenreFilter(genre)}
+                  className={`w-full text-left block px-3 py-1.5 text-sm hover:bg-gray-700 ${selectedGenres.includes(genre) ? 'text-red-400 font-semibold' : 'text-gray-300'}`}
+                  role="menuitem"
+                >
+                  {selectedGenres.includes(genre) && <Check className="inline w-4 h-4 mr-2" />} 
+                  {genre}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <button 
           onClick={handleRefreshClick}
           disabled={refreshing}
@@ -327,7 +306,7 @@ const SmartRecommendations: React.FC = () => {
         <div className="py-12 flex justify-center">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-500"></div>
         </div>
-      ) : filteredRecommendations.length === 0 ? (
+      ) : filteredRecommendations.length === 0 && !error ? (
         <div className="text-center py-16">
           <AlertCircle className="w-12 h-12 mx-auto mb-4 text-red-500 opacity-70" />
           <p className="text-2xl mb-4 font-bold text-red-400">No matching recommendations found.</p>
@@ -342,57 +321,26 @@ const SmartRecommendations: React.FC = () => {
           </button>
         </div>
       ) : (
-        /* Recommendation grid */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredRecommendations.map((rec) => (
-            <div key={rec.id} className="manga-card bg-gray-800/50 rounded-lg overflow-hidden hover:shadow-lg transition-all duration-300 border border-gray-700/50 hover:-translate-y-1">
-              <Link to={`/manga/${rec.id}`} className="block">
-                <div className="relative h-56 overflow-hidden">
-                  <img 
-                    src={rec.cover_image} 
-                    alt={rec.title} 
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement;
-                      target.src = '/placeholder-cover.jpg';
-                    }}
-                  />
-                  <div className="absolute bottom-0 right-0 bg-red-500 text-white px-2 py-1 text-sm font-semibold">
-                    {rec.match_percentage}% Match
-                  </div>
-                </div>
-                <div className="p-4">
-                  <h3 className="text-lg font-semibold mb-2 line-clamp-1">{rec.title}</h3>
-                  <div className="flex flex-wrap gap-1 mb-3">
-                    {rec.genres.slice(0, 3).map((genre, idx) => (
-                      <span key={idx} className="bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded">
-                        {genre}
-                      </span>
-                    ))}
-                    {rec.genres.length > 3 && (
-                      <span className="bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded">
-                        +{rec.genres.length - 3}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-gray-400 text-sm line-clamp-2">{rec.reason}</p>
-                </div>
-              </Link>
+        <>
+          {/* Recommendation grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {filteredRecommendations.map((rec) => (
+              <RecommendationCard key={rec.id} rec={rec} />
+            ))}
+          </div>
+          {/* Last updated info */}
+          {lastUpdated && (
+            <div className="mt-8 text-gray-500 text-xs text-center">
+              <p>Last updated: {lastUpdated ? new Date(lastUpdated).toLocaleString() : ''}</p>
+              {nextUpdate && (
+                <p>Next scheduled update: {nextUpdate ? new Date(nextUpdate).toLocaleString() : ''}</p>
+              )}
             </div>
-          ))}
-        </div>
-      )}
-
-      {/* Last updated info */}
-      {lastUpdated && (
-        <div className="mt-8 text-gray-500 text-xs text-center">
-          <p>Last updated: {new Date(lastUpdated).toLocaleString()}</p>
-          {nextUpdate && (
-            <p>Next scheduled update: {new Date(nextUpdate).toLocaleString()}</p>
           )}
-        </div>
+        </>
       )}
     </div>
+    </>
   );
 };
 
