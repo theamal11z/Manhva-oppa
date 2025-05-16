@@ -2,8 +2,8 @@
  * Custom hook for fetching and caching manga lists
  * Used for Home and Discover pages to cache manga lists across page loads
  */
-import { useQuery } from '@tanstack/react-query';
-import { getMangaList, getRecommendations } from '../lib/supabaseClient';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { getMangaList, getRecommendations, searchManga } from '../lib/supabaseClient';
 import AppStorage from '../lib/AppStorage';
 
 // Categories for manga lists
@@ -42,7 +42,9 @@ export function useMangaList({
       // Fetch fresh data
       let response;
       
-      if (category === 'trending') {
+      if (searchTerm) { 
+        response = await searchManga(searchTerm, limit, offset);
+      } else if (category === 'trending') {
         response = await getMangaList(
           limit, 
           offset, 
@@ -58,12 +60,11 @@ export function useMangaList({
         );
       } else if (category === 'recommended') {
         response = await getRecommendations(limit);
-      } else {
-        // Default fetch with search if provided
+      } else { 
         response = await getMangaList(
           limit, 
           offset, 
-          'created_at', 
+          'popularity', 
           'desc'
         );
       }
@@ -99,7 +100,7 @@ export function useMangaList({
     },
     staleTime: STALE_TIME,
     enabled,
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   });
 }
 

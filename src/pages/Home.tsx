@@ -23,7 +23,7 @@ const Home: React.FC = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'trending'|'new'|'recommended'|'search'>('trending');
   const [page, setPage] = useState(0);
-  const limit = 12;
+  const limit = 6;
   const [hasMore, setHasMore] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);

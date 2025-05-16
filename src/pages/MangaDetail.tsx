@@ -94,7 +94,52 @@ const MangaDetail: React.FC = () => {
         
         setManga(mangaData);
         setChapters(mangaData.chapters || []);
-        
+
+        // Fetch similar manga based on genres
+        if (mangaData && mangaData.manga_genres && mangaData.manga_genres.length > 0) {
+          const currentMangaGenreNames = mangaData.manga_genres
+            .map((mg: any) => mg.genres?.name)
+            .filter(Boolean);
+
+          if (currentMangaGenreNames.length > 0) {
+            try {
+              const { data: similarMangaData, error: similarMangaError } = await supabase
+                .from('manga_entries')
+                .select(`
+                  id,
+                  title,
+                  cover_image,
+                  rating,
+                  popularity,
+                  manga_genres!inner(genres!inner(name))
+                `)
+                .in('manga_genres.genres.name', currentMangaGenreNames)
+                .neq('id', id) // Exclude the current manga itself
+                .order('popularity', { ascending: false })
+                .limit(10); // Fetch a few extra for deduplication
+
+              if (similarMangaError) {
+                console.error('Error fetching similar manga:', similarMangaError);
+                setSimilarManga([]);
+              } else if (similarMangaData) {
+                // Deduplicate, as a manga might appear multiple times if it shares multiple genres
+                const uniqueSimilarManga = similarMangaData.reduce((acc: any[], mangaItem: any) => {
+                  if (!acc.find(item => item.id === mangaItem.id)) {
+                    acc.push(mangaItem);
+                  }
+                  return acc;
+                }, []);
+                setSimilarManga(uniqueSimilarManga.slice(0, 4)); // Display up to 4 similar manga
+              }
+            } catch (err) {
+              console.error('Exception fetching similar manga:', err);
+              setSimilarManga([]);
+            }
+          }
+        } else {
+          setSimilarManga([]); // No genres to base similarity on, or no manga_genres data
+        }
+
         // Check if manga is in user's reading list and get progress
         if (user) {
           const { data: readingStatus } = await getReadingStatus(user.id, id);
@@ -335,7 +380,7 @@ const MangaDetail: React.FC = () => {
     year: manga.year || new Date().getFullYear(),
     rating: manga.rating || 4.5,
     popularity: manga.popularity || 0,
-    genres: manga.genres?.map((g: any) => g.genres.name) || ['Action', 'Fantasy'],
+    genres: manga.manga_genres?.map((g: any) => g.genres.name) || [],
     tags: manga.tags?.map((t: any) => t.tags.name) || ['Magic', 'Adventure'],
     ageRating: manga.age_rating || '13+',
     totalChapters: manga.total_chapters || chapters.length || 0

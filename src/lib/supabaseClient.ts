@@ -74,6 +74,23 @@ export const getMangaByGenre = async (genreId: string, limit = 10) => {
     .limit(limit);
 };
 
+export const searchManga = async (
+  searchTerm: string,
+  limit = 10,
+  offset = 0
+) => {
+  return supabase
+    .from('manga_entries')
+    .select(`
+      *,
+      genres:manga_genres(genres(*)),
+      tags:manga_tags(tags(*))
+    `)
+    .ilike('title', `%${searchTerm}%`) // Case-insensitive search for title containing searchTerm
+    .range(offset, offset + limit - 1)
+    .order('popularity', { ascending: false }); // Order search results by popularity
+};
+
 // User reading list helpers
 export const getUserReadingList = async (userId: string) => {
   return supabase
@@ -131,7 +148,6 @@ export const removeFromReadingList = async (userId: string, mangaId: string) => 
     .match({ user_id: userId, manga_id: mangaId });
 };
 
-// Function to update reading status
 export const updateReadingStatus = async (userId: string, mangaId: string, status: 'reading' | 'completed' | 'on_hold' | 'dropped' | 'plan_to_read', currentChapter?: number) => {
   const updateData: any = {
     user_id: userId,
@@ -144,7 +160,7 @@ export const updateReadingStatus = async (userId: string, mangaId: string, statu
     updateData.current_chapter = currentChapter;
   }
   
-  return supabase.from('user_reading_lists').upsert(updateData);
+  return supabase.from('user_reading_lists').upsert(updateData).select('status, current_chapter').single();
 };
 
 // Utility: Log a single chapter as read in reading_history
